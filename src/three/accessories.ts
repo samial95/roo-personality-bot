@@ -32,8 +32,7 @@ export const mat = (color: string, o: Partial<{ rough: number; metal: number; em
     color,
     roughness: o.rough ?? 0.5,
     metalness: o.metal ?? 0,
-    emissive: o.emissive ? new Color(o.emissive) : undefined,
-    emissiveIntensity: o.ei ?? 1,
+    ...(o.emissive ? { emissive: new Color(o.emissive), emissiveIntensity: o.ei ?? 1 } : {}),
   });
 
 export const mesh = (g: BufferGeometry, m: Material, x = 0, y = 0, z = 0) => {

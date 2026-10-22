@@ -7,7 +7,9 @@
     "preview": "vite preview --port 4173",
     "lint": "eslint src tests",
     "test": "playwright test",
-    "bake": "node --experimental-strip-types --no-warnings scripts/bake-clips.ts"
+    "bake": "node --experimental-strip-types --no-warnings scripts/bake-clips.ts",
+    "model": "npm run bake && /Applications/Blender.app/Contents/MacOS/Blender -b -P blender/make_robot.py && node scripts/check-glb.mjs",
+    "check-glb": "node scripts/check-glb.mjs"
   },
   "dependencies": {
     "gsap": "^3.15.0",

@@ -75,22 +75,30 @@ function squareUVs(g: BufferGeometry, size: number) {
 }
 
 export interface RobotParts {
-  root: Group; // static, sits on the floor
-  rig: Group; // receives idle + move transforms
+  root: Object3D; // static, sits on the floor
+  rig: Object3D; // receives idle + move transforms
   body: Mesh;
   face_screen: Mesh;
-  antenna_L: Group;
-  antenna_R: Group;
-  arm_L: Group;
-  arm_R: Group;
+  antenna_L: Object3D;
+  antenna_R: Object3D;
+  arm_L: Object3D;
+  arm_R: Object3D;
   base: Mesh;
   empties: Record<'head_top' | 'antenna_tip_L' | 'antenna_tip_R' | 'hand_R' | 'face_overlay' | 'ground_L', Object3D>;
-  mats: { body: MeshPhysicalMaterial; screen: MeshPhysicalMaterial; joint: MeshStandardMaterial };
+  mats: RobotMaterials;
   caps: Mesh[];
 }
 
-export function buildProceduralRobot(faceTex: Texture): RobotParts {
-  const mats = {
+export interface RobotMaterials {
+  body: MeshPhysicalMaterial;
+  screen: MeshPhysicalMaterial;
+  joint: MeshStandardMaterial;
+  dark: MeshStandardMaterial;
+}
+
+/** Runtime materials, shared by the procedural robot and the Blender GLB (matched by name). */
+export function makeMaterials(faceTex: Texture): RobotMaterials {
+  return {
     body: new MeshPhysicalMaterial({ name: 'body_mat', color: '#F2F2F2', roughness: 0.55 }),
     screen: new MeshPhysicalMaterial({
       name: 'screen',
@@ -104,8 +112,13 @@ export function buildProceduralRobot(faceTex: Texture): RobotParts {
       clearcoatRoughness: 0.05,
     }),
     joint: new MeshStandardMaterial({ name: 'joint_mat', color: '#C9C9C9', metalness: 1, roughness: 0.35 }),
+    dark: new MeshStandardMaterial({ name: 'base_mat', color: '#0b0b0d', roughness: 0.4 }),
   };
-  const dark = new MeshStandardMaterial({ color: '#0b0b0d', roughness: 0.4 });
+}
+
+export function buildProceduralRobot(faceTex: Texture): RobotParts {
+  const mats = makeMaterials(faceTex);
+  const dark = mats.dark;
 
   const root = new Group();
   root.name = 'roo';

@@ -1,5 +1,9 @@
 import {
   ACESFilmicToneMapping,
+  AnimationMixer,
+  LoopOnce,
+  type AnimationAction,
+  type AnimationClip,
   AdditiveBlending,
   CanvasTexture,
   Color,
@@ -27,6 +31,7 @@ import { Face, type Expression } from './face';
 import { buildProceduralRobot, type RobotParts } from './ProceduralRobot';
 import { Accessories } from './accessories';
 import { Props } from './props';
+import { loadRobot } from './loadRobot';
 import { DEG, HOVER, MOVE_FACE, moveTimeline, pokeTimeline, PX, revealTimeline, zero, type MoveCtx, type Pose } from './moves';
 
 const FACE_FOR: Record<Personality, Expression> = {
@@ -64,6 +69,10 @@ export class Stage {
   private robot: RobotParts;
   private acc: Accessories;
   private props: Props;
+  private mixer: AnimationMixer | null = null;
+  private clips = new Map<string, AnimationClip>();
+  private clipAction: AnimationAction | null = null;
+  private usedClip = false; // set by ctx() when the next timeline is backed by a baked clip
   private currentMove: Move | null = null;
   private face = new Face();
   private rim: PointLight;
@@ -170,6 +179,51 @@ export class Stage {
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
     document.addEventListener('visibilitychange', () => (document.hidden ? this.stop() : this.start()));
     this.start();
+    void this.swapToGLB();
+  }
+
+  /** Replace the procedural placeholder with the Blender robot and its baked clips. */
+  private async swapToGLB() {
+    try {
+      const { parts, clips } = await loadRobot(this.face.texture);
+      const old = this.robot.root;
+      old.traverse((o) => {
+        if (o instanceof Mesh) o.geometry.dispose();
+      });
+      Object.values(this.robot.mats).forEach((m) => m.dispose());
+      this.scene.remove(old);
+      this.robot = parts;
+      this.scene.add(parts.root);
+      this.restArm = { L: parts.arm_L.rotation.z, R: parts.arm_R.rotation.z };
+      this.restAnt = { L: parts.antenna_L.rotation.z, R: parts.antenna_R.rotation.z };
+      this.props.clear();
+      this.props = new Props(parts, this.reduced);
+      this.acc = new Accessories(parts, this.reduced);
+      if (this.state) this.applyLook();
+      this.mixer = new AnimationMixer(parts.root);
+      this.mixer.addEventListener('finished', (e) => (e.action as AnimationAction).fadeOut(0.25));
+      for (const c of clips) this.clips.set(c.name, c);
+    } catch (err) {
+      console.warn('Roo: keeping the procedural robot', err);
+    }
+  }
+
+  /** Plays a baked Blender clip with a 0.25 s crossfade; false if unavailable. */
+  private playClip(name: string): boolean {
+    const clip = this.clips.get(name);
+    if (!this.mixer || !clip || this.reduced) return false;
+    const action = this.mixer.clipAction(clip);
+    if (this.clipAction && this.clipAction !== action) this.clipAction.fadeOut(0.25);
+    action.reset().setLoop(LoopOnce, 1);
+    action.clampWhenFinished = true;
+    action.fadeIn(0.25).play();
+    this.clipAction = action;
+    return true;
+  }
+
+  private stopClip() {
+    this.clipAction?.fadeOut(0.25);
+    this.clipAction = null;
   }
 
   // ---------- public API ----------
@@ -293,13 +347,13 @@ export class Stage {
       Object.assign(this.add, zero());
       return;
     }
-    this.runMove(revealTimeline(p, this.ctx()));
+    this.runMove(revealTimeline(p, this.ctx(`${p}_reveal`)));
   }
 
   /** Callbacks the shared move timelines use to drive face, floor and blush. */
-  private ctx(): MoveCtx {
+  private ctx(clip?: string): MoveCtx {
     return {
-      pose: this.add,
+      pose: clip && (this.usedClip = this.playClip(clip)) ? zero() : this.add,
       p: this.state?.personality ?? null,
       balloon: this.state?.look.acc.hand === 'balloon',
       face: (e) => (this.faceOverride = e),
@@ -314,6 +368,8 @@ export class Stage {
   private runMove(tl: gsap.core.Timeline) {
     this.moveTl?.kill();
     this.currentMove = null;
+    if (!this.usedClip) this.stopClip();
+    this.usedClip = false;
     this.moveTl = tl;
     tl.eventCallback('onComplete', () => {
       if (this.moveTl !== tl) return;
@@ -331,7 +387,8 @@ export class Stage {
       this.runMove(gsap.timeline().to({}, { duration: 1.2 }));
       return 1.2;
     }
-    const tl = moveTimeline(m, this.ctx());
+    const p = this.state?.personality;
+    const tl = moveTimeline(m, this.ctx(p ? `${p}_${m}` : undefined));
     this.runMove(tl);
     this.currentMove = m;
     return tl.duration() / tl.timeScale();
@@ -345,7 +402,8 @@ export class Stage {
       return this.runMove(gsap.timeline().to({}, { duration: 0.8 }));
     }
     Object.assign(this.add, zero());
-    this.runMove(pokeTimeline(this.ctx()));
+    const p = this.state?.personality;
+    this.runMove(pokeTimeline(this.ctx(p ? `${p}_poke` : undefined)));
   }
 
   // ---------- idle ----------
@@ -496,6 +554,7 @@ export class Stage {
     this.rim.intensity += (this.rimTarget * 10 * pulse - this.rim.intensity) * Math.min(1, dt * 4);
     (this.floorGlow.material as MeshBasicMaterial).color.copy(this.accent);
 
+    this.mixer?.update(dt); // baked clips override idle on the nodes they animate
     this.props.update(this.clock);
     this.fadeBody(this.props.invisible ? 0.15 : 1, dt);
     this.acc.update(this.clock, this.currentMove === 'dance' || this.state?.look.acc.ground === 'speaker');
@@ -583,7 +642,10 @@ export class Stage {
     this.pointerPx.set(e.clientX, e.clientY);
     this.pointer.set(nx, ny);
     // Shy stops a move early if the cursor moves fast.
-    if (this.state?.personality === 'shy' && this.moveTl && this.pointerSpeed > 120) this.moveTl.progress(1);
+    if (this.state?.personality === 'shy' && this.moveTl && this.pointerSpeed > 120) {
+      this.moveTl.progress(1);
+      this.stopClip();
+    }
   };
 
   private onPointerDown = (e: PointerEvent) => {

@@ -62,7 +62,7 @@ for (const p of PERSONALITIES) {
     const tl = clipTimeline(kind, { pose, p, balloon: false }).pause(0);
     const duration = tl.duration() / tl.timeScale();
     const frames = Math.max(2, Math.ceil(duration * FPS) + 1);
-    const hover = p === 'calm' ? 24 * PX : 0;
+    const hover = p === 'calm' ? 40 * PX : 0; // matches the calm idle float in Stage.computeIdle
     const tracks: Record<string, Track> = {};
     const prevQ: Record<string, Quaternion> = {};
     for (let i = 0; i < frames; i++) {

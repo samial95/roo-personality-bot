@@ -166,30 +166,46 @@ export function revealTimeline(p: Personality, c: MoveCtx): gsap.core.Timeline {
   const pulse = c.pulse ?? noop;
   const tl = gsap.timeline();
   if (p === 'shy') {
-    tl.fromTo(a, { y: -0.7 }, { y: 0, duration: 0.9, ease: 'power2.out' })
+    // rises from behind the blanket, peeks straight at you, panics, hides, turns away blushing
+    tl.fromTo(a, { y: -0.9, ry: 0.62 }, { y: 0, duration: 1.1, ease: 'power2.out' })
       .call(() => face('default'))
-      .to(a, { ry: 0.32, duration: 0.25 }, '+=0.3') // peek at the camera (cancels the idle turn)
-      .call(() => face(null), [], '+=0.5')
-      .to(a, { ry: 0, armL: -0.25, armR: -0.25, duration: 0.6, ease: 'sine.inOut' })
-      .call(() => c.blush?.())
-      .to(a, { armL: 0, armR: 0, duration: 0.6 }, '+=0.6');
+      .to({}, { duration: 0.55 })
+      .call(() => face('surprised'))
+      .to(a, { y: -0.2, sq: 0.1, armL: -0.95, armR: -0.95, rx: 0.2, duration: 0.16, ease: 'power3.out' }) // EEP
+      .call(() => {
+        face('wink');
+        c.blush?.();
+      })
+      .to(a, { ry: 0, x: -0.1, duration: 0.7, ease: 'sine.inOut' }, '+=0.5')
+      .to(a, { y: 0, sq: 0, armL: 0, armR: 0, rx: 0, x: 0, duration: 0.9, ease: 'sine.inOut' }, '+=0.5')
+      .call(() => face(null));
   } else if (p === 'playful') {
-    tl.fromTo(a, { y: 3 }, { y: 0, duration: 0.55, ease: 'power3.in' })
+    // cannonballs in, squashes, double spin, ta-da, one more hop for good measure
+    tl.fromTo(a, { y: 3.5 }, { y: 0, duration: 0.55, ease: 'power3.in' })
       .to(a, { sq: 0.12, duration: 0.08 })
       .call(pulse)
       .to(a, { sq: 0, duration: 0.3, ease: 'elastic.out(1,0.4)' })
-      .to(a, { ry: Math.PI * 2, duration: 0.6, ease: 'power2.inOut' })
+      .to(a, { ry: Math.PI * 4, duration: 0.9, ease: 'power2.inOut' })
       .set(a, { ry: 0 })
-      .to(a, { armL: 1.2, armR: 1.2, duration: 0.25, ease: 'back.out(2)' })
-      .to(a, { armL: 0, armR: 0, duration: 0.4 }, '+=0.7');
+      .to(a, { armL: 1.5, armR: 1.5, rz: 0.1, duration: 0.25, ease: 'back.out(2)' })
+      .call(() => face('happy'))
+      .to(a, { y: 0.4, sq: -0.06, duration: 0.25, ease: 'power2.out' }, '+=0.3')
+      .to(a, { y: 0, sq: 0, duration: 0.25, ease: 'power2.in' })
+      .call(pulse)
+      .to(a, { armL: 0, armR: 0, rz: 0, duration: 0.4 }, '+=0.4')
+      .call(() => face(null));
   } else if (p === 'dramatic') {
-    tl.fromTo(a, { ry: Math.PI }, { ry: 0, duration: 1.6, ease: 'power2.inOut' })
-      .to(a, { armL: 2.3, armR: 2.3, duration: 0.35, ease: 'back.out(1.6)' })
-      .to(a, { armL: 0, armR: 0, duration: 0.5, ease: 'power2.inOut' }, '+=0.8');
+    // back to the audience… a slow turn… THE pose, held
+    tl.fromTo(a, { ry: Math.PI }, { ry: 0, duration: 1.8, ease: 'power2.inOut' })
+      .call(() => face('surprised'))
+      .to(a, { armL: 2.6, armR: 2.6, rx: -0.2, sq: -0.05, duration: 0.35, ease: 'back.out(1.6)' })
+      .call(() => face(null))
+      .to(a, { armL: 0, armR: 0, rx: 0, sq: 0, duration: 0.6, ease: 'power2.inOut' }, '+=1.2');
   } else {
-    tl.fromTo(a, { y: -0.4 }, { y: 0, duration: 2, ease: 'sine.inOut' })
-      .call(() => c.blink?.(400))
-      .call(pulse, [], '-=0.4');
+    // drifts up slower than seems possible, one very long blink
+    tl.fromTo(a, { y: -0.5 }, { y: 0, duration: 2.6, ease: 'sine.inOut' })
+      .call(() => c.blink?.(600))
+      .call(pulse, [], '-=0.6');
   }
   return tl;
 }

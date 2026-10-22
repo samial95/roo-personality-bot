@@ -13,6 +13,7 @@ export const EXPRESSIONS = [
   'wink',
   'dizzy',
   'off',
+  'angry',
 ] as const;
 export type Expression = (typeof EXPRESSIONS)[number];
 
@@ -90,6 +91,9 @@ function eye(ctx: Ctx, expr: Expression, side: -1 | 1) {
       return line(-20, 20, 20, -20);
     case 'off':
       return;
+    case 'angry': // furious slanted slits, inner corners down
+      ctx.rotate(side * 0.5);
+      return pill(48, 18);
   }
 }
 

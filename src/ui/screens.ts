@@ -131,15 +131,19 @@ function mixBar(mix: Mix, p: Personality) {
 function reveal(v: View) {
   const p = v.personality!;
   const r = REVEAL[p];
-  const [first, ...rest] = r.name.split(' ');
-  const name = `${first} ${rest[0]}<br />${rest.slice(1).join(' ')}`;
+  // "Roo the" / "Chaos Buddy", one span per letter so the big reveal can stagger them in
+  const words = r.name.split(' ');
+  let n = 0;
+  const line = (ws: string[]) =>
+    ws.map((w) => `<span class="word">${[...w].map((ch) => `<span class="ch" style="--i:${n++}">${esc(ch)}</span>`).join('')}</span>`).join(' ');
+  const name = `<span aria-hidden="true">${line(words.slice(0, 2))}<br />${line(words.slice(2))}</span>`;
   const actions = v.shared
     ? `<button class="btn btn-primary" data-action="make-own">Make your own ${ICON.arrow}</button>`
     : `<button class="btn btn-primary" data-action="customize">Customize Roo ${ICON.arrow}</button>
        <button class="btn btn-secondary" data-action="share">Share</button>
        <button class="btn-text" data-action="restart">Try again</button>`;
   return `
-    <h1 tabindex="-1" class="reveal-name">${name}</h1>
+    <h1 tabindex="-1" class="reveal-name" aria-label="${esc(r.name)}">${name}</h1>
     <p class="quote">"${esc(r.quote)}"</p>
     ${mixBar(v.mix, p)}
     <ul class="chips traits">${r.traits.map((t) => `<li class="chip">${esc(t)}</li>`).join('')}</ul>

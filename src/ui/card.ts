@@ -5,12 +5,18 @@ const W = 1200;
 const H = 630;
 
 /** Offscreen 1200×630 share card: robot pose, name, quote, mix and a small wordmark. */
-export async function renderCard(robot: HTMLCanvasElement, p: Personality, mix: Mix): Promise<HTMLCanvasElement> {
-  // Copy the WebGL frame synchronously, before the browser clears the drawing buffer.
+export interface Shot {
+  canvas: HTMLCanvasElement;
+  x: number; // square crop around Roo, device pixels
+  y: number;
+  size: number;
+}
+
+export async function renderCard(robot: Shot, p: Personality, mix: Mix): Promise<HTMLCanvasElement> {
+  // Copy the crop synchronously, before the browser clears the WebGL drawing buffer.
   const shot = document.createElement('canvas');
-  shot.width = robot.width;
-  shot.height = robot.height;
-  shot.getContext('2d')!.drawImage(robot, 0, 0);
+  shot.width = shot.height = Math.round(robot.size);
+  shot.getContext('2d')!.drawImage(robot.canvas, robot.x, robot.y, robot.size, robot.size, 0, 0, robot.size, robot.size);
 
   await Promise.all([document.fonts.load('600 64px Geist'), document.fonts.load('400 20px "Geist Mono"')]).catch(() => {});
 
@@ -29,10 +35,7 @@ export async function renderCard(robot: HTMLCanvasElement, p: Personality, mix: 
   g.fillRect(0, 0, W, H);
 
   // robot: crop the centre of the stage frame, keep its aspect
-  const crop = Math.min(shot.width, shot.height) * 0.9;
-  const sx = (shot.width - crop) / 2;
-  const sy = (shot.height - crop) / 2;
-  g.drawImage(shot, sx, sy, crop, crop, 40, 15, 600, 600);
+  g.drawImage(shot, 20, 15, 600, 600);
 
   const r = REVEAL[p];
   const x = 640;
@@ -68,6 +71,6 @@ export async function renderCard(robot: HTMLCanvasElement, p: Personality, mix: 
   g.fill();
   g.fillStyle = '#FAFAFA';
   g.font = '600 24px Geist, sans-serif';
-  g.fillText('roo', 86, H - 45);
+  g.fillText('Roo', 86, H - 45);
   return c;
 }

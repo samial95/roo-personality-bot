@@ -61,7 +61,7 @@ const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
   <header class="topbar">
-    <a class="logo" href="./" data-action="home" aria-label="roo — home"><span class="logo-mark" aria-hidden="true"></span>roo</a>
+    <a class="logo" href="./" data-action="home" aria-label="Roo — home"><span class="logo-mark" aria-hidden="true"></span>Roo</a>
     <div class="topbar-actions">
       <button class="icon-btn" data-action="home" aria-label="Home">${ICON.home}</button>
       <button class="icon-btn" data-action="sound" aria-label="Sound" aria-pressed="false">${ICON.soundOff}</button>
@@ -154,12 +154,30 @@ function go(screen: Screen) {
   }
   requestAnimationFrame(() => el.classList.add('in'));
 
-  bubble(defaultBubble());
+  // big reveal: the 3D build-up runs first, the name and the bubble land after it
+  const big = screen === 'reveal' && (from === 'installing' || from === 'boot') && !reduced;
+  if (big) el.classList.add('big');
+  bubble(null);
+  if (big) window.setTimeout(() => v.screen === 'reveal' && bubble(defaultBubble()), 2400);
+  else bubble(defaultBubble());
+  clearTimeout(introHint);
+  if (screen === 'intro') introHint = window.setTimeout(() => v.screen === 'intro' && !app.classList.contains('dragging') && bubble('Don’t even THINK about grabbing my ears.', 3200), 6000);
   announcer.textContent = screenTitle(v);
   if (screen !== 'boot') el.querySelector<HTMLElement>('h1, h2')?.focus({ preventScroll: true });
 
   if (screen === 'boot') window.setTimeout(() => v.screen === 'boot' && go('intro'), 2200);
   if (screen === 'installing') runInstall(el);
+}
+
+let introHint = 0;
+
+/** Restarts the reveal's staged text animation (persona chips). */
+function replayBigReveal() {
+  const el = content.querySelector('.screen:not(.leaving)');
+  if (!el || reduced) return;
+  el.classList.remove('big');
+  void (el as HTMLElement).offsetWidth;
+  el.classList.add('big');
 }
 
 /** Re-render the current screen in place (no crossfade), keeping focus. */
@@ -379,7 +397,9 @@ app.addEventListener('click', (e) => {
       v.mix = computed && computed.winner === p ? computed.mix : { [p]: 100 };
       syncStage();
       refresh();
-      bubble(defaultBubble());
+      replayBigReveal();
+      bubble(null);
+      window.setTimeout(() => v.screen === 'reveal' && bubble(defaultBubble()), reduced ? 0 : 2400);
       announcer.textContent = screenTitle(v);
       sfx.reveal();
       return;
@@ -520,6 +540,11 @@ import('./three/stage')
     stage = new Stage(stageEl);
     stage.attachBubble(bubbleEl);
     stage.onPoke = () => sfx.poke();
+    stage.onSay = (text, ms, color) => bubble(text, ms, color);
+    stage.onDrag = (on) => {
+      app.classList.toggle('dragging', on);
+      if (on) sfx.poke();
+    };
     syncStage();
   })
   .catch((err) => console.error('3D stage failed to load', err));

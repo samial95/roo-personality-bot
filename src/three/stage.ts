@@ -1,29 +1,37 @@
 import {
   ACESFilmicToneMapping,
-  AnimationMixer,
-  LoopOnce,
-  type AnimationAction,
-  type AnimationClip,
   AdditiveBlending,
+  AnimationMixer,
   CanvasTexture,
   Color,
   DirectionalLight,
   HemisphereLight,
+  LoopOnce,
   Mesh,
   MeshBasicMaterial,
+  Object3D,
+  PCFShadowMap,
   PerspectiveCamera,
+  Plane,
   PlaneGeometry,
   PMREMGenerator,
   PointLight,
   Raycaster,
+  RectAreaLight,
   RingGeometry,
   Scene,
+  ShadowMaterial,
+  SpotLight,
   SRGBColorSpace,
   Vector2,
   Vector3,
   WebGLRenderer,
+  type AnimationAction,
+  type AnimationClip,
+  type Material,
 } from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import gsap from 'gsap';
 import { ACCENT, ACCENT_COLORS, BODY_COLORS, GLOW_COLORS, type Move, type Personality } from '../data/content';
 import type { Look, Screen } from '../state';
@@ -32,15 +40,18 @@ import { buildProceduralRobot, type RobotParts } from './ProceduralRobot';
 import { Accessories } from './accessories';
 import { Props } from './props';
 import { loadRobot } from './loadRobot';
+import { Environments } from './environments';
+import { EarDrag } from './drag';
 import { DEG, HOVER, MOVE_FACE, moveTimeline, pokeTimeline, PX, revealTimeline, zero, type MoveCtx, type Pose } from './moves';
 
-const FACE_FOR: Record<Personality, Expression> = {
-  shy: 'shy',
-  playful: 'playful',
-  dramatic: 'dramatic',
-  calm: 'calm',
-};
+const FACE_FOR: Record<Personality, Expression> = { shy: 'shy', playful: 'playful', dramatic: 'dramatic', calm: 'calm' };
 const RIM: Record<Personality | 'neutral', number> = { neutral: 0.6, shy: 0.5, playful: 1.0, dramatic: 1.2, calm: 0.7 };
+const ENV_SCREENS: Screen[] = ['reveal', 'customize', 'share'];
+const FOV = 28;
+// camera framings: plain studio vs. looking down a little onto the diorama
+const CAM_STUDIO = { y: 1.25, z: 8.2, ty: 1.12 };
+const CAM_DIORAMA = { y: 2.6, z: 8.8, ty: 0.98 };
+const UPSET = ['HEY!', 'Put me DOWN!', 'Not the EAR!!', 'OW OW OW', "I'm telling!!", 'This is NOT a personality test!', 'I bite. (I don’t. But STILL.)'];
 
 export interface StageSync {
   screen: Screen;
@@ -62,24 +73,45 @@ function radialTexture(inner: string, outer: string): CanvasTexture {
   return t;
 }
 
+const isFx = (m: Material) => (m as MeshBasicMaterial).blending === AdditiveBlending || (m.transparent && m.opacity < 0.6) || (m as MeshBasicMaterial).isMeshBasicMaterial;
+
 export class Stage {
   private renderer: WebGLRenderer;
+  private layer = document.createElement('div');
   private scene = new Scene();
-  private camera = new PerspectiveCamera(28, 1, 0.1, 50);
+  private camera = new PerspectiveCamera(FOV, 1, 0.1, 60);
   private robot: RobotParts;
   private acc: Accessories;
   private props: Props;
+  private envs: Environments;
+  private drag = new EarDrag();
   private mixer: AnimationMixer | null = null;
   private clips = new Map<string, AnimationClip>();
   private clipAction: AnimationAction | null = null;
   private usedClip = false; // set by ctx() when the next timeline is backed by a baked clip
   private currentMove: Move | null = null;
   private face = new Face();
+  // lights
+  private key: DirectionalLight;
+  private fill: RectAreaLight;
+  private kicker: SpotLight;
+  private hemi: HemisphereLight;
+  private spot: SpotLight;
   private rim: PointLight;
+  private level = { v: 1 }; // overall rig brightness (reveal dims it)
+  private spotLevel = { v: 0 };
   private floorGlow: Mesh;
+  private catcher: Mesh;
   private rings: Mesh[] = [];
+  // camera
+  private cam = { ...CAM_STUDIO };
+  private dolly = { z: 0, y: 0 };
+  private distK = 1;
+  private anchor = new Vector2();
+  // motion
   private add = zero(); // animated by GSAP (moves, pokes, sequences)
   private idle = zero();
+  private idleFace: Expression | null = null;
   private restArm = { L: 0, R: 0 };
   private restAnt = { L: 0, R: 0 };
   private clock = 0;
@@ -90,6 +122,8 @@ export class Stage {
   private look = new Vector2();
   private nextBlink = 2000;
   private spring = { s: 0, v: 0, lastY: 0 };
+  private shyHide = 0;
+  private watched = 0;
   private accent = new Color(ACCENT.neutral);
   private accentTarget = new Color(ACCENT.neutral);
   private rimTarget = RIM.neutral;
@@ -105,64 +139,90 @@ export class Stage {
   private lastActivity = performance.now();
   private glitch = { v: 0 };
   private blushOn = false;
+  private talkTimer = 0;
+  private hoverCheck = 0;
   onPoke: (p: Personality | null) => void = () => {};
+  onSay: (text: string, ms: number, color?: string) => void = () => {};
+  onDrag: (active: boolean) => void = () => {};
 
   constructor(private host: HTMLElement) {
     this.renderer = new WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: false });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.toneMapping = ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.0;
     this.renderer.outputColorSpace = SRGBColorSpace;
-    host.appendChild(this.renderer.domElement);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = PCFShadowMap;
+    // full-viewport canvas so Roo can be dragged anywhere; the .stage box only sets the framing
+    this.layer.className = 'canvas-layer';
+    this.layer.appendChild(this.renderer.domElement);
+    host.after(this.layer);
 
     const pmrem = new PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.55;
     pmrem.dispose();
 
-    const key = new DirectionalLight('#ffffff', 2.4);
-    key.position.set(-3, 5, 4);
-    this.scene.add(key, new HemisphereLight('#ffffff', '#202024', 0.5));
-    this.rim = new PointLight(ACCENT.neutral, 6, 8, 1.5);
+    // ---- cinematic three-point rig ----
+    RectAreaLightUniformsLib.init();
+    this.key = new DirectionalLight('#FFF1E0', 3.2); // warm key, soft real shadows
+    this.key.position.set(-3.5, 6.5, 5);
+    this.key.target.position.set(0, 0.8, 0);
+    this.key.castShadow = true;
+    this.key.shadow.mapSize.set(2048, 2048);
+    Object.assign(this.key.shadow.camera, { left: -3.4, right: 3.4, top: 4.6, bottom: -1.6, near: 1, far: 22 });
+    this.key.shadow.bias = -0.0004;
+    this.key.shadow.normalBias = 0.03;
+    this.key.shadow.radius = 5;
+    this.fill = new RectAreaLight('#CFE0FF', 2.4, 4, 4); // cool soft fill from front-right
+    this.fill.position.set(4.5, 2.5, 5);
+    this.fill.lookAt(0, 1, 0);
+    this.kicker = new SpotLight('#ffffff', 45, 14, 0.5, 1, 1.5); // edge separation from behind
+    this.kicker.position.set(2.8, 4.5, -3.5);
+    this.kicker.target.position.set(0, 1, 0);
+    this.hemi = new HemisphereLight('#ffffff', '#1a1a20', 0.35);
+    this.spot = new SpotLight('#FFE9C2', 0, 16, 0.34, 0.55, 1.2); // reveal / theatre spotlight
+    this.spot.position.set(0, 7.5, 1.8);
+    this.spot.target.position.set(0, 0.8, 0);
+    this.spot.castShadow = true;
+    this.spot.shadow.mapSize.set(1024, 1024);
+    this.spot.shadow.bias = -0.0005;
+    this.spot.shadow.normalBias = 0.03;
+    this.spot.shadow.radius = 4;
+    this.rim = new PointLight(ACCENT.neutral, 6, 8, 1.5); // personality colour from behind
     this.rim.position.set(0, 1.6, -1.6);
-    this.scene.add(this.rim);
+    this.scene.add(this.key, this.key.target, this.fill, this.kicker, this.kicker.target, this.hemi, this.spot, this.spot.target, this.rim);
 
     this.robot = buildProceduralRobot(this.face.texture);
     this.robot.rig.position.y = HOVER;
     this.scene.add(this.robot.root);
     this.acc = new Accessories(this.robot, this.reduced);
     this.props = new Props(this.robot, this.reduced);
+    this.envs = new Environments(this.scene, this.reduced);
     this.restArm = { L: this.robot.arm_L.rotation.z, R: this.robot.arm_R.rotation.z };
     this.restAnt = { L: this.robot.antenna_L.rotation.z, R: this.robot.antenna_R.rotation.z };
+    this.shadowify();
 
-    // contact shadow, coloured floor glow and the faint floor rings
-    const shadow = new Mesh(
-      new PlaneGeometry(1.7, 1.7),
-      new MeshBasicMaterial({ map: radialTexture('rgba(0,0,0,0.75)', 'rgba(0,0,0,0)'), transparent: true, depthWrite: false }),
-    );
-    shadow.rotation.x = -Math.PI / 2;
-    shadow.scale.set(1, 0.55, 1);
+    // floor: real shadow catcher + soft contact blob, coloured glow, faint rings
+    this.catcher = new Mesh(new PlaneGeometry(14, 14), new ShadowMaterial({ opacity: 0.45 }));
+    this.catcher.rotation.x = -Math.PI / 2;
+    this.catcher.position.y = 0.001;
+    this.catcher.receiveShadow = true;
+    const blob = new Mesh(new PlaneGeometry(1.7, 1.7), new MeshBasicMaterial({ map: radialTexture('rgba(0,0,0,0.6)', 'rgba(0,0,0,0)'), transparent: true, depthWrite: false }));
+    blob.rotation.x = -Math.PI / 2;
+    blob.position.y = 0.003;
+    blob.scale.set(1, 0.55, 1);
     this.floorGlow = new Mesh(
       new PlaneGeometry(3, 3),
-      new MeshBasicMaterial({
-        map: radialTexture('rgba(255,255,255,0.14)', 'rgba(255,255,255,0)'),
-        transparent: true,
-        depthWrite: false,
-        blending: AdditiveBlending,
-        color: this.accent,
-      }),
+      new MeshBasicMaterial({ map: radialTexture('rgba(255,255,255,0.14)', 'rgba(255,255,255,0)'), transparent: true, depthWrite: false, blending: AdditiveBlending, color: this.accent }),
     );
     this.floorGlow.rotation.x = -Math.PI / 2;
     this.floorGlow.position.y = -0.36;
-    this.scene.add(shadow, this.floorGlow);
+    this.scene.add(this.catcher, blob, this.floorGlow);
     for (const [r, o] of [
       [0.82, 0.14],
       [1.22, 0.1],
     ]) {
-      const ring = new Mesh(
-        new RingGeometry(r, r + 0.012, 96),
-        new MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: o, depthWrite: false }),
-      );
+      const ring = new Mesh(new RingGeometry(r, r + 0.012, 96), new MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: o, depthWrite: false }));
       ring.rotation.x = -Math.PI / 2;
       ring.position.y = -0.38;
       ring.userData.base = o;
@@ -170,14 +230,23 @@ export class Stage {
       this.scene.add(ring);
     }
 
-    this.camera.position.set(0, 1.25, 8.2);
-    this.camera.lookAt(0, 1.12, 0);
-
     new ResizeObserver(() => this.resize()).observe(host);
+    addEventListener('resize', () => this.resize());
     this.resize();
     addEventListener('pointermove', this.onPointerMove);
+    addEventListener('pointerup', this.onPointerUp);
+    addEventListener('pointercancel', this.onPointerUp);
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
     document.addEventListener('visibilitychange', () => (document.hidden ? this.stop() : this.start()));
+    this.drag.onLand = () => {
+      gsap.fromTo(this.add, { sq: 0.12 }, { sq: 0, duration: 0.5, ease: 'elastic.out(1,0.4)' });
+      this.onSay('Hmph.', 1800, '#FF5A4E');
+    };
+    this.drag.onHome = () => {
+      this.faceOverride = null;
+      this.onDrag(false);
+      this.onSay('…I’m fine. Totally fine.', 2200);
+    };
     this.start();
     void this.swapToGLB();
   }
@@ -200,12 +269,23 @@ export class Stage {
       this.props = new Props(parts, this.reduced);
       this.acc = new Accessories(parts, this.reduced);
       if (this.state) this.applyLook();
+      this.shadowify();
       this.mixer = new AnimationMixer(parts.root);
       this.mixer.addEventListener('finished', (e) => (e.action as AnimationAction).fadeOut(0.25));
       for (const c of clips) this.clips.set(c.name, c);
     } catch (err) {
       console.warn('Roo: keeping the procedural robot', err);
     }
+  }
+
+  /** Robot, accessories and props cast and receive real shadows; glows and beams don't. */
+  private shadowify() {
+    this.robot.root.traverse((o) => {
+      if (!(o instanceof Mesh)) return;
+      const fx = isFx(o.material as Material);
+      o.castShadow = !fx;
+      o.receiveShadow = !fx;
+    });
   }
 
   /** Plays a baked Blender clip with a 0.25 s crossfade; false if unavailable. */
@@ -236,14 +316,15 @@ export class Stage {
     const prev = this.state;
     this.state = { ...next, look: { ...next.look, acc: { ...next.look.acc } } };
     this.applyLook(prev?.look.acc.ground);
+    this.shadowify();
     if (prev?.screen !== next.screen || prev?.personality !== next.personality) this.enter(next, prev);
   }
 
-  /** Hover preview of a personality (null clears it). */
   /** Hover preview of a personality, with the answer's prop scene (null clears both). */
   preview(p: Personality | null, propKey?: string) {
     this.previewing = p;
     this.props.show(p ? (propKey ?? null) : null);
+    this.shadowify();
     this.activity();
   }
 
@@ -275,10 +356,13 @@ export class Stage {
     }
   }
 
-  /** Renders one frame and returns the canvas (for PNG snapshots). */
-  snapshot(): HTMLCanvasElement {
+  /** Renders one frame; returns the canvas plus a square crop (device px) centred on Roo. */
+  snapshot(): { canvas: HTMLCanvasElement; x: number; y: number; size: number } {
     this.renderer.render(this.scene, this.camera);
-    return this.renderer.domElement;
+    const dpr = this.renderer.getPixelRatio();
+    const r = this.host.getBoundingClientRect();
+    const size = Math.min(r.height, r.width * 1.2) * 0.95 * dpr;
+    return { canvas: this.renderer.domElement, x: this.anchor.x * dpr - size / 2, y: this.anchor.y * dpr - size / 2, size };
   }
 
   // ---------- state enter sequences ----------
@@ -288,12 +372,30 @@ export class Stage {
     this.accentTarget.set(p ? ACCENT[p] : ACCENT.neutral);
     this.rimTarget = RIM[p ?? 'neutral'];
     this.blushOn = false;
+    if (next.screen !== 'intro' && this.drag.phase === 'held') this.drag.release();
     if (!/^q[123]$/.test(next.screen)) this.props.clear();
+
+    const diorama = !!p && ENV_SCREENS.includes(next.screen);
+    this.frame3d(diorama);
+    if (!diorama) {
+      this.envs.hide();
+      gsap.to(this.level, { v: 1, duration: 0.6 });
+      gsap.to(this.spotLevel, { v: 0, duration: 0.6 });
+    }
+
     if (next.screen === 'boot') return this.boot();
     if (next.screen === 'installing') return this.installing();
-    if (next.screen === 'reveal' && (prev?.screen !== 'customize' && prev?.screen !== 'share' || prev?.personality !== p) && p)
-      return this.reveal(p);
+    const fromEditing = (prev?.screen === 'customize' || prev?.screen === 'share') && prev.personality === p;
+    if (next.screen === 'reveal' && p && !fromEditing) return this.reveal(p);
+    if (diorama && p && this.envs.current !== p) this.envs.show(p, false);
     if (next.screen === 'intro' && prev && prev.screen !== 'boot') this.resetPose();
+  }
+
+  /** Eases the camera between the studio framing and the diorama framing. */
+  private frame3d(diorama: boolean) {
+    const to = diorama ? CAM_DIORAMA : CAM_STUDIO;
+    gsap.to(this.cam, { ...to, duration: this.reduced ? 0 : 1.1, ease: 'power2.inOut' });
+    for (const o of [this.floorGlow, ...this.rings]) o.visible = !diorama;
   }
 
   private resetPose() {
@@ -341,12 +443,28 @@ export class Stage {
     this.runMove(tl);
   }
 
+  /**
+   * The big reveal: lights out → spotlight snaps on → Roo's reveal → the diorama builds piece by
+   * piece around it while the camera pulls back and the lights come up on the scene.
+   */
   private reveal(p: Personality) {
     this.faceOverride = null;
     if (this.reduced) {
       Object.assign(this.add, zero());
+      this.envs.show(p, false);
+      this.level.v = this.envs.level;
+      this.spotLevel.v = p === 'dramatic' ? 1 : 0.25;
       return;
     }
+    this.envs.show(p, true, 0.6);
+    gsap.killTweensOf([this.level, this.spotLevel, this.dolly]);
+    gsap
+      .timeline()
+      .to(this.level, { v: 0.04, duration: 0.18, ease: 'power2.in' })
+      .to(this.spotLevel, { v: 1.6, duration: 0.06 }, 0.38) // *clunk*
+      .to(this.level, { v: this.envs.level, duration: 1.5, ease: 'power2.inOut' }, 1.1)
+      .to(this.spotLevel, { v: p === 'dramatic' ? 1.1 : 0.25, duration: 1.2, ease: 'sine.inOut' }, 1.8);
+    gsap.fromTo(this.dolly, { z: -3.0, y: -0.9 }, { z: 0, y: 0, duration: 2.8, delay: 0.25, ease: 'power3.inOut' });
     this.runMove(revealTimeline(p, this.ctx(`${p}_reveal`)));
   }
 
@@ -381,6 +499,7 @@ export class Stage {
   }
 
   private playMove(m: Move): number {
+    if (this.drag.active) return 0;
     Object.assign(this.add, zero());
     if (this.reduced) {
       this.faceOverride = MOVE_FACE[m];
@@ -406,10 +525,54 @@ export class Stage {
     this.runMove(pokeTimeline(this.ctx(p ? `${p}_poke` : undefined)));
   }
 
+  // ---------- ear drag (intro only) ----------
+
+  private earUnder(e: PointerEvent): Object3D | null {
+    const hit = this.hit(e);
+    for (let o: Object3D | null = hit; o; o = o.parent) {
+      if (o === this.robot.antenna_L || o === this.robot.antenna_R) return o;
+      if (o === this.robot.rig) break;
+    }
+    return null;
+  }
+
+  private hit(e: PointerEvent): Object3D | null {
+    const v = new Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    this.ray.setFromCamera(v, this.camera);
+    return this.ray.intersectObject(this.robot.rig, true)[0]?.object ?? null;
+  }
+
+  private pointerOnPlane(e: PointerEvent, z: number): Vector3 {
+    const v = new Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    this.ray.setFromCamera(v, this.camera);
+    return this.ray.ray.intersectPlane(new Plane(new Vector3(0, 0, 1), -z), new Vector3()) ?? new Vector3(0, HOVER, 0);
+  }
+
+  private startDrag(ear: Object3D, e: PointerEvent) {
+    const r = this.robot;
+    const tipObj = ear === r.antenna_L ? r.empties.antenna_tip_L : r.empties.antenna_tip_R;
+    const tipWorld = tipObj.getWorldPosition(new Vector3());
+    r.rig.updateMatrixWorld();
+    const tipLocal = r.rig.worldToLocal(tipWorld.clone());
+    this.moveTl?.kill();
+    this.moveTl = null;
+    this.stopClip();
+    Object.assign(this.add, zero());
+    this.faceOverride = 'angry';
+    this.drag.grab(tipLocal, new Vector3(0, 0.8, 0), r.rig.rotation.z, new Vector3(0, HOVER, 0), this.pointerOnPlane(e, tipWorld.z));
+    this.dragZ = tipWorld.z;
+    this.renderer.domElement.setPointerCapture(e.pointerId);
+    this.renderer.domElement.style.cursor = 'grabbing';
+    this.onDrag(true);
+    this.talkTimer = 0;
+  }
+  private dragZ = 0;
+
   // ---------- idle ----------
 
   private computeIdle(t: number): Pose {
     const o = zero();
+    this.idleFace = null;
     if (this.reduced) return o;
     const p = this.previewing ?? this.state?.personality ?? null;
     const amp = this.previewing ? 0.6 : 1;
@@ -421,44 +584,63 @@ export class Stage {
         o.armR = -o.armL;
         break;
       case 'shy': {
-        const glance = Math.max(0, Math.sin((t * TAU) / 5) ** 24); // brief glance every 5 s
-        o.ry = -0.3 * (1 - glance) * amp;
-        o.y = Math.sin((t * TAU) / 3) * 3 * PX;
-        o.antL = o.antR = 10 * DEG;
-        o.armL = Math.sin(t * 7) * 2 * DEG - 0.12;
-        o.armR = -0.12;
-        const near = this.pointerPx.distanceTo(this.robotScreen()) < 150;
-        o.x = near ? -0.12 : 0;
-        o.rz = near ? 4 * DEG : 0;
+        // closed posture: turned 35° away, hunched, head down, arms tucked, trembling, tiny.
+        const glance = Math.max(0, Math.sin((t * TAU) / 5)) ** 30; // a terrified peek every 5 s
+        const hide = this.shyHide;
+        o.ry = -0.62 * (1 - glance) * amp;
+        o.rx = (0.14 + 0.16 * hide) * (1 - glance) * amp;
+        o.sq = 0.05 * amp;
+        o.wide = -0.03 * amp;
+        o.x = ((-0.18 - 0.3 * hide) * amp + Math.sin(t * 47) * 1.4 * PX) * (1 - glance * 0.5);
+        o.z = -0.25 * hide;
+        o.rz = Math.sin(t * 39) * 0.7 * DEG;
+        o.y = Math.sin((t * TAU) / 3) * 2 * PX - 8 * PX;
+        o.armL = (-0.32 - 0.62 * hide) * amp + Math.sin(t * 6) * 2 * DEG;
+        o.armR = (-0.32 - 0.62 * hide) * amp;
+        o.antL = o.antR = 0.45 * amp;
+        this.idleFace = glance > 0.5 ? 'default' : hide > 0.5 ? 'wink' : 'shy';
         break;
       }
       case 'playful': {
+        // can't. stop. bouncing.
         const beat = (t % 0.5) / 0.5;
-        o.y = Math.abs(Math.sin(beat * Math.PI)) * 14 * PX * amp;
-        o.armL = (Math.sin(t * Math.PI * 2) * 20 * DEG + 10 * DEG) * amp;
-        o.armR = (-Math.sin(t * Math.PI * 2) * 20 * DEG + 10 * DEG) * amp;
-        o.antX = Math.sin(t * Math.PI * 4) * 12 * DEG * amp;
-        o.sq = beat < 0.08 ? 0.04 * amp : 0;
+        o.y = Math.abs(Math.sin(beat * Math.PI)) * 26 * PX * amp;
+        o.sq = (beat < 0.1 ? 0.08 : beat > 0.4 && beat < 0.6 ? -0.04 : 0) * amp;
+        o.armL = (Math.sin(t * TAU) * 35 * DEG + 15 * DEG) * amp;
+        o.armR = (-Math.sin(t * TAU) * 35 * DEG + 15 * DEG) * amp;
+        o.antX = Math.sin(t * Math.PI * 4) * 25 * DEG * amp;
+        o.rz = Math.sin(t * TAU) * 6 * DEG * amp;
+        const ph = t % 4; // a trick every 4 s
+        if (ph > 3.2) {
+          const k = (ph - 3.2) / 0.8;
+          o.ry = TAU * (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
+          this.idleFace = 'wink';
+        }
         break;
       }
       case 'dramatic': {
+        // grand poses, held, with a gasp on every change
         const phase = Math.floor(t / 4);
         const r = (n: number) => Math.sin(phase * 12.9898 + n * 78.233) * 0.5 + 0.5;
-        const ease = Math.min(1, (t % 4) / 0.6);
-        const k = 1 - (1 - ease) ** 3;
-        o.ry = (r(1) - 0.5) * 0.6 * k * amp;
-        o.rz = (r(2) - 0.5) * 0.12 * k * amp;
-        o.armL = r(3) * 1.4 * k * amp;
-        o.armR = r(4) * 0.8 * k * amp;
-        o.sq = -Math.sin((t * Math.PI * 2) / 4) * 0.015; // long sigh
+        const into = (t % 4) / 0.7;
+        const k = 1 - (1 - Math.min(1, into)) ** 3;
+        o.ry = (r(1) - 0.5) * 1.0 * k * amp;
+        o.rz = (r(2) - 0.5) * 0.4 * k * amp;
+        o.rx = -(0.05 + r(5) * 0.15) * k * amp; // lean back
+        o.armL = (0.8 + r(3) * 1.6) * k * amp;
+        o.armR = (r(4) > 0.5 ? 2.3 : 0.4) * k * amp; // back of the hand to the forehead
+        o.sq = -Math.sin((t * TAU) / 4) * 0.04; // loooong sigh
+        if (into < 0.4) this.idleFace = 'surprised';
         break;
       }
       case 'calm': {
-        const b = Math.sin((t * Math.PI * 2) / 4);
-        o.y = (24 + b * 10) * PX * amp;
-        o.wide = (b * 0.5 + 0.5) * 0.03;
-        o.armL = Math.sin((t * Math.PI * 2) / 4) * 5 * DEG + 0.1;
-        o.armR = Math.sin((t * Math.PI * 2) / 4 + 1) * 5 * DEG + 0.1;
+        // floats higher, breathes slower, eyes closed
+        const b = Math.sin((t * TAU) / 6);
+        o.y = (40 + b * 14) * PX * amp;
+        o.wide = (b * 0.5 + 0.5) * 0.04;
+        o.rz = Math.sin((t * TAU) / 9) * 2 * DEG;
+        o.armL = 0.25 + Math.sin((t * TAU) / 6) * 10 * DEG;
+        o.armR = 0.25 + Math.sin((t * TAU) / 6 + 1) * 10 * DEG;
         break;
       }
     }
@@ -499,6 +681,12 @@ export class Stage {
     this.last = now;
     this.clock += dt;
     const r = this.robot;
+    const p = this.previewing ?? this.state?.personality ?? null;
+
+    // being looked at (shy hides, hearts appear after 3 s)
+    const dist = this.pointerPx.distanceTo(this.robotScreen());
+    this.shyHide += ((dist < 260 ? 1 : 0) - this.shyHide) * Math.min(1, dt * 5);
+    this.watched = dist < 420 ? this.watched + dt : 0;
 
     this.idle = this.computeIdle(this.clock);
     const a = this.add;
@@ -510,11 +698,28 @@ export class Stage {
     this.look.lerp(this.pointer, k);
     this.pointerSpeed *= Math.exp(-dt * 6);
 
-    r.rig.position.set(i.x + a.x, HOVER + i.y + a.y, i.z + a.z);
-    r.rig.rotation.set(i.rx + a.rx - this.look.y * 3 * DEG, i.ry + a.ry + this.look.x * 10 * DEG, i.rz + a.rz);
-    r.body.scale.set(1 + sq * 0.5 + i.wide, 1 - sq, 1 + sq * 0.5 + i.wide);
-    r.arm_L.rotation.z = this.restArm.L - (i.armL + a.armL);
-    r.arm_R.rotation.z = this.restArm.R + (i.armR + a.armR);
+    if (this.drag.active) {
+      // dangling from an ear, furious
+      this.drag.step(dt, HOVER);
+      const held = this.drag.phase === 'held';
+      const squirm = held ? Math.sin(this.clock * 21) * 0.07 : 0;
+      r.rig.position.copy(this.drag.pos);
+      r.rig.rotation.set(0, held ? Math.sin(this.clock * 9) * 0.15 : 0, this.drag.rotZ + squirm);
+      r.body.scale.set(1 + a.sq * 0.5, 1 - a.sq, 1 + a.sq * 0.5);
+      const flail = held ? 1 : 0.15;
+      r.arm_L.rotation.z = this.restArm.L - (0.9 + Math.sin(this.clock * 26) * 0.7) * flail;
+      r.arm_R.rotation.z = this.restArm.R + (0.9 + Math.sin(this.clock * 26 + Math.PI) * 0.7) * flail;
+      if (held && (this.talkTimer -= dt) <= 0) {
+        this.talkTimer = 1.3;
+        this.onSay(UPSET[Math.floor(Math.random() * UPSET.length)], 1250, '#FF5A4E');
+      }
+    } else {
+      r.rig.position.set(i.x + a.x, HOVER + i.y + a.y, i.z + a.z);
+      r.rig.rotation.set(i.rx + a.rx - this.look.y * 3 * DEG, i.ry + a.ry + this.look.x * 10 * DEG, i.rz + a.rz);
+      r.body.scale.set(1 + sq * 0.5 + i.wide, 1 - sq, 1 + sq * 0.5 + i.wide);
+      r.arm_L.rotation.z = this.restArm.L - (i.armL + a.armL);
+      r.arm_R.rotation.z = this.restArm.R + (i.armR + a.armR);
+    }
 
     // antenna spring follow-through driven by vertical velocity
     const vy = (r.rig.position.y - this.spring.lastY) / Math.max(dt, 1e-3);
@@ -528,20 +733,19 @@ export class Stage {
 
     // face
     if (now > this.nextBlink && !this.faceOverride) {
-      const calm = (this.previewing ?? this.state?.personality) === 'calm';
+      const calm = p === 'calm';
       this.face.blink(now, calm ? 400 : 120);
       this.nextBlink = now + (calm ? 6000 : 3000 + Math.random() * 2000);
     }
-    const p = this.previewing ?? this.state?.personality ?? null;
-    this.face.set(this.faceOverride ?? (p ? FACE_FOR[p] : 'default'), now);
+    this.face.set(this.faceOverride ?? this.idleFace ?? (p ? FACE_FOR[p] : 'default'), now);
     this.face.glitch = this.glitch.v;
     this.face.update(
       {
         expr: this.face.expression,
         color: this.glowColor(),
         lookX: this.look.x,
-        lookY: -this.look.y,
-        blush: this.blushOn || this.state?.look.acc.face === 'blush' || (p === 'shy' && !this.previewing && this.state?.screen === 'reveal'),
+        lookY: p === 'shy' ? -0.8 : -this.look.y,
+        blush: this.blushOn || this.state?.look.acc.face === 'blush' || p === 'shy',
       },
       now,
     );
@@ -553,9 +757,22 @@ export class Stage {
     const pulse = p === 'playful' ? 1 + 0.2 * Math.abs(Math.sin(this.clock * Math.PI * 2)) : p === 'calm' ? 1 + 0.15 * Math.sin((this.clock * Math.PI * 2) / 4) : 1;
     this.rim.intensity += (this.rimTarget * 10 * pulse - this.rim.intensity) * Math.min(1, dt * 4);
     (this.floorGlow.material as MeshBasicMaterial).color.copy(this.accent);
+    const L = this.level.v;
+    this.key.intensity = 3.2 * L;
+    this.fill.intensity = 2.4 * L;
+    this.kicker.intensity = 45 * Math.max(L, 0.3);
+    this.hemi.intensity = 0.35 * L;
+    this.scene.environmentIntensity = 0.45 * L;
+    this.spot.intensity = 260 * this.spotLevel.v;
+    this.host.style.setProperty('--stage-level', L.toFixed(3));
+
+    // camera: framing + reveal dolly, centred on the .stage box via the view offset
+    this.camera.position.set(0, this.cam.y + this.dolly.y, (this.cam.z + this.dolly.z) * this.distK);
+    this.camera.lookAt(0, this.cam.ty, 0);
 
     this.mixer?.update(dt); // baked clips override idle on the nodes they animate
     this.props.update(this.clock);
+    this.envs.update(this.clock, { watched: this.watched, beat: (this.clock % 0.5) / 0.5 });
     this.fadeBody(this.props.invisible ? 0.15 : 1, dt);
     this.acc.update(this.clock, this.currentMove === 'dance' || this.state?.look.acc.ground === 'speaker');
     this.renderer.render(this.scene, this.camera);
@@ -579,9 +796,10 @@ export class Stage {
 
   /** After 20 s with no input, do a small personality-specific attention move. */
   private idleAttention(now: number) {
-    if (now - this.lastActivity < 20000 || this.moveTl || !this.state) return;
+    if (now - this.lastActivity < 20000 || this.moveTl || !this.state || this.drag.active) return;
     this.lastActivity = now;
     const p = this.state.personality;
+    if (!p && this.state.screen === 'intro') return this.onSay('Don’t even THINK about grabbing my ears.', 3000);
     this.playMove(p === 'playful' ? 'jump' : p === 'dramatic' ? 'spin' : p === 'calm' ? 'wave' : p === 'shy' ? 'wave' : 'surprise');
   }
 
@@ -607,23 +825,20 @@ export class Stage {
     m.body.clearcoatRoughness = 0.08;
   }
 
+  /** Roo's face in viewport pixels (the canvas covers the viewport). */
   private robotScreen(): Vector2 {
     this.robot.empties.face_overlay.getWorldPosition(this.tmp);
     this.tmp.project(this.camera);
-    const { width, height } = this.host.getBoundingClientRect();
-    const rect = this.host.getBoundingClientRect();
-    return new Vector2(rect.left + ((this.tmp.x + 1) / 2) * width, rect.top + ((1 - this.tmp.y) / 2) * height);
+    return new Vector2(((this.tmp.x + 1) / 2) * innerWidth, ((1 - this.tmp.y) / 2) * innerHeight);
   }
 
   private positionBubble() {
     if (!this.bubbleEl) return;
     this.robot.empties.head_top.getWorldPosition(this.tmp);
     this.tmp.project(this.camera);
-    const { width, height } = this.host.getBoundingClientRect();
-    // keep the bubble inside the stage (narrow phones)
     const bw = this.bubbleEl.offsetWidth;
-    const x = Math.min(((this.tmp.x + 1) / 2) * width + 70, width - bw - 12);
-    const y = Math.max(((1 - this.tmp.y) / 2) * height - 70, 64);
+    const x = Math.max(12, Math.min(((this.tmp.x + 1) / 2) * innerWidth + 70, innerWidth - bw - 12));
+    const y = Math.max(((1 - this.tmp.y) / 2) * innerHeight - 70, 64);
     this.bubbleEl.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
   }
 
@@ -633,6 +848,7 @@ export class Stage {
 
   private onPointerMove = (e: PointerEvent) => {
     this.activity();
+    if (this.drag.phase === 'held') return this.drag.move(this.pointerOnPlane(e, this.dragZ));
     const c = this.robotScreen();
     const nx = Math.max(-1, Math.min(1, (e.clientX - c.x) / (innerWidth * 0.4)));
     const ny = Math.max(-1, Math.min(1, -(e.clientY - c.y) / (innerHeight * 0.4)));
@@ -646,23 +862,45 @@ export class Stage {
       this.moveTl.progress(1);
       this.stopClip();
     }
+    // grab cursor over the ears on the intro
+    if (e.target === this.renderer.domElement && performance.now() > this.hoverCheck) {
+      this.hoverCheck = performance.now() + 60;
+      const intro = this.state?.screen === 'intro' && !this.drag.active;
+      this.renderer.domElement.style.cursor = intro && this.earUnder(e) ? 'grab' : this.hit(e) ? 'pointer' : 'default';
+    }
   };
 
   private onPointerDown = (e: PointerEvent) => {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    const v = new Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
-    this.ray.setFromCamera(v, this.camera);
-    if (this.ray.intersectObject(this.robot.rig, true).length) this.poke();
+    if (this.drag.active) return;
+    const ear = this.state?.screen === 'intro' && !this.reduced ? this.earUnder(e) : null;
+    if (ear) {
+      e.preventDefault();
+      return this.startDrag(ear, e);
+    }
+    if (this.hit(e)) this.poke();
   };
 
+  private onPointerUp = () => {
+    if (this.drag.phase !== 'held') return;
+    this.drag.release();
+    this.renderer.domElement.style.cursor = 'default';
+  };
+
+  /** Full-viewport canvas; the view offset puts the look-at point at the centre of the .stage box. */
   private resize() {
-    const { width, height } = this.host.getBoundingClientRect();
-    if (!width || !height) return;
-    this.renderer.setSize(width, height, false);
-    this.camera.aspect = width / height;
-    // keep the robot fully in frame on narrow stages
-    this.camera.position.z = width / height < 0.8 ? 8.2 / Math.max(0.55, width / height / 0.8) : 8.2;
-    this.camera.lookAt(0, 1.12, 0);
+    const W = innerWidth;
+    const H = innerHeight;
+    const r = this.host.getBoundingClientRect();
+    if (!W || !H || !r.height) return;
+    this.renderer.setSize(W, H, false);
+    // keep Roo's on-screen size tied to the .stage box height, as before the full-screen canvas
+    const s = r.height / H;
+    this.camera.fov = (2 * Math.atan(Math.tan((FOV * DEG) / 2) / s)) / DEG;
+    this.camera.aspect = W / H;
+    const aspect = r.width / r.height;
+    this.distK = aspect < 0.8 ? 1 / Math.max(0.55, aspect / 0.8) : 1;
+    this.anchor.set(r.left + r.width / 2, r.top + r.height / 2);
+    this.camera.setViewOffset(W, H, W / 2 - this.anchor.x, H / 2 - this.anchor.y, W, H);
     this.camera.updateProjectionMatrix();
   }
 }

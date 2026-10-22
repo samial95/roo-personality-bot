@@ -26,7 +26,7 @@ test('capture all states', async ({ page }, info) => {
   await snap('05-q3');
   await current(page).locator('.answer[data-p="dramatic"]').click();
   await snap('06-installing', 1800);
-  await expect(current(page).getByRole('heading', { name: 'Pip the Chaos Buddy' })).toBeVisible({ timeout: 5000 });
+  await expect(current(page).getByRole('heading', { name: 'Roo the Chaos Buddy' })).toBeVisible({ timeout: 5000 });
   await snap('08-reveal-playful', 2500);
   for (const [p, n] of [
     ['Shy', '07-reveal-shy'],
@@ -37,7 +37,7 @@ test('capture all states', async ({ page }, info) => {
     await snap(n, 2600);
   }
   await current(page).getByRole('radio', { name: 'Playful' }).click();
-  await current(page).getByRole('button', { name: 'Customize Pip' }).click();
+  await current(page).getByRole('button', { name: 'Customize Roo' }).click();
   await current(page).getByRole('radio', { name: 'Sky Blue' }).click();
   await current(page).getByRole('radio', { name: 'Gold', exact: true }).click();
   await snap('11-customize-color', 900);

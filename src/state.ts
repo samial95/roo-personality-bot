@@ -105,7 +105,7 @@ export function decodeShare(search: string): { p: Personality; mix: Mix; look: L
   }
   if (!Object.keys(mix).length) mix[p] = 100;
   const look = cloneLook(DEFAULT_LOOK);
-  // Unknown ids fall back to defaults so a bad link still renders a valid Pip.
+  // Unknown ids fall back to defaults so a bad link still renders a valid Roo.
   const pick = (key: string, opts: Option[], fallback: string) => {
     const v = q.get(key);
     return v && opts.some((o) => o.id === v) ? v : fallback;

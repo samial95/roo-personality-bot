@@ -108,7 +108,7 @@ export function buildProceduralRobot(faceTex: Texture): RobotParts {
   const dark = new MeshStandardMaterial({ color: '#0b0b0d', roughness: 0.4 });
 
   const root = new Group();
-  root.name = 'pip';
+  root.name = 'roo';
   const rig = new Group();
   rig.name = 'rig';
   root.add(rig);

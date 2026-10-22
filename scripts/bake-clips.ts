@@ -12,7 +12,7 @@ const r4 = (n: number) => Math.round(n * 1e4) / 1e4;
 const q4 = (q: Quaternion) => [q.w, q.x, q.y, q.z].map(r4); // w-first, three.js (Y-up) space
 
 const robot = buildProceduralRobot(new Texture());
-const NAMED = ['pip', 'rig', 'body', 'face_screen', 'chest_slot', 'base', 'antenna_L', 'antenna_R', 'antenna_cap_L', 'antenna_cap_R', 'arm_L', 'arm_R'];
+const NAMED = ['roo', 'rig', 'body', 'face_screen', 'chest_slot', 'base', 'antenna_L', 'antenna_R', 'antenna_cap_L', 'antenna_cap_R', 'arm_L', 'arm_R'];
 const EMPTIES = ['head_top', 'antenna_tip_L', 'antenna_tip_R', 'hand_R', 'face_overlay', 'ground_L'];
 
 // rest pose of every named node, in three.js space

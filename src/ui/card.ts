@@ -38,7 +38,7 @@ export async function renderCard(robot: HTMLCanvasElement, p: Personality, mix: 
   const x = 640;
   g.fillStyle = '#FAFAFA';
   g.font = '600 64px Geist, sans-serif';
-  const words = r.name.replace(/^Pip the /, 'The ').split(' ');
+  const words = r.name.replace(/^Roo the /, 'The ').split(' ');
   const line2 = words.splice(Math.ceil(words.length / 2)).join(' ');
   g.fillText(words.join(' '), x, 240);
   g.fillText(line2, x, 310);
@@ -68,6 +68,6 @@ export async function renderCard(robot: HTMLCanvasElement, p: Personality, mix: 
   g.fill();
   g.fillStyle = '#FAFAFA';
   g.font = '600 24px Geist, sans-serif';
-  g.fillText('pip', 86, H - 45);
+  g.fillText('roo', 86, H - 45);
   return c;
 }

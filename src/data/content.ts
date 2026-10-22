@@ -61,25 +61,25 @@ export const QUESTIONS: Question[] = [
 
 export const REVEAL: Record<Personality, { name: string; quote: string; traits: [string, string, string]; bubble: string }> = {
   shy: {
-    name: 'Pip the Quiet One',
+    name: 'Roo the Quiet One',
     quote: "Oh… you're still looking at me?",
     traits: ['Quiet observer', 'Easily flustered', 'Secretly hilarious'],
     bubble: '…hi.',
   },
   playful: {
-    name: 'Pip the Chaos Buddy',
+    name: 'Roo the Chaos Buddy',
     quote: 'Again! Again! AGAIN!',
     traits: ['Zero chill', 'Professional bouncer', 'Snack-motivated'],
     bubble: 'Wanna see a trick?!',
   },
   dramatic: {
-    name: 'Pip the Main Character',
+    name: 'Roo the Main Character',
     quote: 'This is the best day of my entire existence.',
     traits: ['Main character energy', 'Gasps often', 'Owns a spotlight'],
     bubble: 'Finally. My moment.',
   },
   calm: {
-    name: 'Pip the Zen Unit',
+    name: 'Roo the Zen Unit',
     quote: "Breathe in. Breathe out. We're good.",
     traits: ['Unbothered', 'Plant parent', 'Speaks in lo-fi'],
     bubble: 'Everything is fine.',

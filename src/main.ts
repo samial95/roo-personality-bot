@@ -61,7 +61,7 @@ const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
   <header class="topbar">
-    <a class="logo" href="./" data-action="home" aria-label="pip — home"><span class="logo-mark" aria-hidden="true"></span>pip</a>
+    <a class="logo" href="./" data-action="home" aria-label="roo — home"><span class="logo-mark" aria-hidden="true"></span>roo</a>
     <div class="topbar-actions">
       <button class="icon-btn" data-action="home" aria-label="Home">${ICON.home}</button>
       <button class="icon-btn" data-action="sound" aria-label="Sound" aria-pressed="false">${ICON.soundOff}</button>
@@ -88,7 +88,8 @@ const announcer = $('[data-announce]');
 // ---------- bubble & toast ----------
 
 let bubbleTimer = 0;
-function bubble(text: string | null, ms = 0) {
+/** Speech bubble; tinted with the option's (or current personality's) colour. */
+function bubble(text: string | null, ms = 0, color?: string) {
   clearTimeout(bubbleTimer);
   if (!text) {
     bubbleEl.classList.remove('show');
@@ -97,6 +98,7 @@ function bubble(text: string | null, ms = 0) {
   }
   bubbleEl.hidden = false;
   bubbleEl.textContent = text;
+  bubbleEl.style.setProperty('--bubble', color ?? (v.personality ? ACCENT[v.personality] : '#ffffff'));
   requestAnimationFrame(() => bubbleEl.classList.add('show'));
   if (ms) bubbleTimer = window.setTimeout(() => bubble(defaultBubble()), ms);
 }
@@ -208,7 +210,7 @@ async function downloadCard() {
   if (!blob) return;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `pip-${v.personality}.png`;
+  a.download = `roo-${v.personality}.png`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
@@ -428,7 +430,7 @@ async function copyLink() {
   const mobile = matchMedia('(pointer: coarse)').matches;
   if (mobile && navigator.share) {
     try {
-      await navigator.share({ title: 'My Pip', text: REVEAL[v.personality!].name, url });
+      await navigator.share({ title: 'My Roo', text: REVEAL[v.personality!].name, url });
       return;
     } catch {
       /* cancelled — fall back to copying */
@@ -447,8 +449,9 @@ async function copyLink() {
 const previewOn = (e: Event) => {
   const t = (e.target as HTMLElement).closest<HTMLElement>('.answer');
   if (!t || t.closest('.leaving')) return;
-  stage?.preview(t.dataset.p as Personality);
-  bubble(t.dataset.bubble ?? null);
+  const qi = Number(v.screen[1]) - 1;
+  stage?.preview(t.dataset.p as Personality, `q${qi + 1}_${t.dataset.p}`);
+  bubble(t.dataset.bubble ?? null, 0, ACCENT[t.dataset.p as Personality]);
   app.style.setProperty('--preview', ACCENT[t.dataset.p as Personality]);
   app.classList.add('previewing');
   sfx.hover();
@@ -524,7 +527,7 @@ import('./three/stage')
 // test hook
 declare global {
   interface Window {
-    __pip: { view: View; answers: () => Personality[]; look: () => Look };
+    __roo: { view: View; answers: () => Personality[]; look: () => Look; stage: () => Stage | null };
   }
 }
-window.__pip = { view: v, answers: () => answers, look: () => v.look };
+window.__roo = { view: v, answers: () => answers, look: () => v.look, stage: () => stage };

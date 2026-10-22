@@ -27,7 +27,7 @@ import gsap from 'gsap';
 import { SLOTS, type Slot } from '../data/content';
 import type { RobotParts } from './ProceduralRobot';
 
-const mat = (color: string, o: Partial<{ rough: number; metal: number; emissive: string; ei: number }> = {}) =>
+export const mat = (color: string, o: Partial<{ rough: number; metal: number; emissive: string; ei: number }> = {}) =>
   new MeshStandardMaterial({
     color,
     roughness: o.rough ?? 0.5,
@@ -36,13 +36,13 @@ const mat = (color: string, o: Partial<{ rough: number; metal: number; emissive:
     emissiveIntensity: o.ei ?? 1,
   });
 
-const mesh = (g: BufferGeometry, m: Material, x = 0, y = 0, z = 0) => {
+export const mesh = (g: BufferGeometry, m: Material, x = 0, y = 0, z = 0) => {
   const o = new Mesh(g, m);
   o.position.set(x, y, z);
   return o;
 };
 
-function heartShape(s: number): Shape {
+export function heartShape(s: number): Shape {
   const h = new Shape();
   h.moveTo(0, -s);
   h.bezierCurveTo(-s * 1.4, -s * 0.2, -s * 0.9, s * 1.1, 0, s * 0.45);
@@ -50,7 +50,7 @@ function heartShape(s: number): Shape {
   return h;
 }
 
-function starShape(r: number): Shape {
+export function starShape(r: number): Shape {
   const s = new Shape();
   for (let i = 0; i < 10; i++) {
     const a = Math.PI / 2 + (i * Math.PI) / 5;
@@ -61,7 +61,7 @@ function starShape(r: number): Shape {
   return s;
 }
 
-const extrude = (s: Shape, depth: number) => {
+export const extrude = (s: Shape, depth: number) => {
   const g = new ExtrudeGeometry(s, { depth, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 3 });
   g.center();
   return g;

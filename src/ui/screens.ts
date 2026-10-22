@@ -39,9 +39,9 @@ const LETTERS = ['A', 'B', 'C', 'D'];
 export function screenTitle(v: View): string {
   switch (v.screen) {
     case 'boot':
-      return 'Pip is waking up';
+      return 'Roo is waking up';
     case 'intro':
-      return "Hi. I'm Pip. I don't have a personality yet.";
+      return "Hi. I'm Roo. I don't have a personality yet.";
     case 'q1':
     case 'q2':
     case 'q3': {
@@ -53,9 +53,9 @@ export function screenTitle(v: View): string {
     case 'reveal':
       return v.personality ? REVEAL[v.personality].name : '';
     case 'customize':
-      return 'Customize Pip';
+      return 'Customize Roo';
     case 'share':
-      return 'Share your Pip';
+      return 'Share your Roo';
   }
 }
 
@@ -81,7 +81,7 @@ export function renderScreen(v: View): string {
 
 function intro() {
   return `
-    <h1 tabindex="-1">Hi. I'm Pip.<br />I don't have a personality yet.</h1>
+    <h1 tabindex="-1">Hi. I'm Roo.<br />I don't have a personality yet.</h1>
     <p class="body">3 questions. A whole new me.</p>
     <button class="btn btn-primary" data-action="start">Give me a personality ${ICON.arrow}</button>`;
 }
@@ -135,7 +135,7 @@ function reveal(v: View) {
   const name = `${first} ${rest[0]}<br />${rest.slice(1).join(' ')}`;
   const actions = v.shared
     ? `<button class="btn btn-primary" data-action="make-own">Make your own ${ICON.arrow}</button>`
-    : `<button class="btn btn-primary" data-action="customize">Customize Pip ${ICON.arrow}</button>
+    : `<button class="btn btn-primary" data-action="customize">Customize Roo ${ICON.arrow}</button>
        <button class="btn btn-secondary" data-action="share">Share</button>
        <button class="btn-text" data-action="restart">Try again</button>`;
   return `
@@ -236,7 +236,7 @@ function customize(v: View) {
   return `
     <section class="panel" aria-labelledby="cz-title">
       <div class="panel-head">
-        <div><h2 id="cz-title" tabindex="-1">Customize Pip</h2><span class="accent-dot"></span></div>
+        <div><h2 id="cz-title" tabindex="-1">Customize Roo</h2><span class="accent-dot"></span></div>
         <button class="icon-btn" data-action="close-customize" aria-label="Close customize">${ICON.close}</button>
       </div>
       <div class="tabs" role="tablist" aria-label="Customize">
@@ -256,10 +256,10 @@ export function shareModal(link: string) {
   return `
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="share-title">
       <div class="modal-head">
-        <h2 id="share-title" tabindex="-1">Share your Pip</h2>
+        <h2 id="share-title" tabindex="-1">Share your Roo</h2>
         <button class="icon-btn" data-action="close-share" aria-label="Close share">${ICON.close}</button>
       </div>
-      <img class="card" data-card alt="Snapshot card of your Pip" />
+      <img class="card" data-card alt="Snapshot card of your Roo" />
       <div class="link-field">
         <input readonly value="${esc(link)}" aria-label="Share link" />
         <button class="btn btn-primary sm" data-action="copy">Copy link</button>
@@ -275,7 +275,7 @@ export function confirmModal() {
   return `
     <div class="modal modal-sm" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
       <h2 id="confirm-title" tabindex="-1">Start over?</h2>
-      <p class="body">Your custom Pip will be reset.</p>
+      <p class="body">Your custom Roo will be reset.</p>
       <div class="modal-actions">
         <button class="btn btn-secondary" data-action="confirm-no">Keep editing</button>
         <button class="btn btn-primary" data-action="confirm-yes">Start over</button>

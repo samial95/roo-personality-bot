@@ -26,6 +26,7 @@ import type { Look, Screen } from '../state';
 import { Face, type Expression } from './face';
 import { buildProceduralRobot, type RobotParts } from './ProceduralRobot';
 import { Accessories } from './accessories';
+import { Props } from './props';
 import { DEG, HOVER, MOVE_FACE, moveTimeline, pokeTimeline, PX, revealTimeline, zero, type MoveCtx, type Pose } from './moves';
 
 const FACE_FOR: Record<Personality, Expression> = {
@@ -62,6 +63,7 @@ export class Stage {
   private camera = new PerspectiveCamera(28, 1, 0.1, 50);
   private robot: RobotParts;
   private acc: Accessories;
+  private props: Props;
   private currentMove: Move | null = null;
   private face = new Face();
   private rim: PointLight;
@@ -120,6 +122,7 @@ export class Stage {
     this.robot.rig.position.y = HOVER;
     this.scene.add(this.robot.root);
     this.acc = new Accessories(this.robot, this.reduced);
+    this.props = new Props(this.robot, this.reduced);
     this.restArm = { L: this.robot.arm_L.rotation.z, R: this.robot.arm_R.rotation.z };
     this.restAnt = { L: this.robot.antenna_L.rotation.z, R: this.robot.antenna_R.rotation.z };
 
@@ -183,8 +186,10 @@ export class Stage {
   }
 
   /** Hover preview of a personality (null clears it). */
-  preview(p: Personality | null) {
+  /** Hover preview of a personality, with the answer's prop scene (null clears both). */
+  preview(p: Personality | null, propKey?: string) {
     this.previewing = p;
+    this.props.show(p ? (propKey ?? null) : null);
     this.activity();
   }
 
@@ -229,6 +234,7 @@ export class Stage {
     this.accentTarget.set(p ? ACCENT[p] : ACCENT.neutral);
     this.rimTarget = RIM[p ?? 'neutral'];
     this.blushOn = false;
+    if (!/^q[123]$/.test(next.screen)) this.props.clear();
     if (next.screen === 'boot') return this.boot();
     if (next.screen === 'installing') return this.installing();
     if (next.screen === 'reveal' && (prev?.screen !== 'customize' && prev?.screen !== 'share' || prev?.personality !== p) && p)
@@ -490,11 +496,27 @@ export class Stage {
     this.rim.intensity += (this.rimTarget * 10 * pulse - this.rim.intensity) * Math.min(1, dt * 4);
     (this.floorGlow.material as MeshBasicMaterial).color.copy(this.accent);
 
+    this.props.update(this.clock);
+    this.fadeBody(this.props.invisible ? 0.15 : 1, dt);
     this.acc.update(this.clock, this.currentMove === 'dance' || this.state?.look.acc.ground === 'speaker');
     this.renderer.render(this.scene, this.camera);
     this.positionBubble();
     this.idleAttention(now);
   };
+
+  /** Q3 "Invisibility": everything but the eyes fades out. */
+  private fadeBody(target: number, dt: number) {
+    for (const m of [this.robot.mats.body, this.robot.mats.joint]) {
+      if (m.opacity === target) continue;
+      m.opacity = Math.abs(target - m.opacity) < 0.01 ? target : m.opacity + (target - m.opacity) * Math.min(1, dt * 8);
+      const see = m.opacity < 1;
+      if (m.transparent !== see) {
+        m.transparent = see;
+        m.depthWrite = !see;
+        m.needsUpdate = true;
+      }
+    }
+  }
 
   /** After 20 s with no input, do a small personality-specific attention move. */
   private idleAttention(now: number) {

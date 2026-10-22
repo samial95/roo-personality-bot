@@ -103,10 +103,41 @@ function bubble(text: string | null, ms = 0, color?: string) {
   if (ms) bubbleTimer = window.setTimeout(() => bubble(defaultBubble()), ms);
 }
 
+// what Roo says by default on the intro / reveal; both lines change after a moment
+let introLine: 'hi' | 'ear' | null = 'hi'; // null while Roo is sulking
+let revealLater = false;
+let lineTimer = 0;
+
 function defaultBubble(): string | null {
-  if (v.screen === 'intro') return 'Oh! A human. Hi.';
-  if (v.screen === 'reveal' && v.personality) return REVEAL[v.personality].bubble;
+  if (v.screen === 'intro') return introLine === 'hi' ? 'Oh! A human. Hi.' : introLine === 'ear' ? 'Please do not pull my ear.' : null;
+  if (v.screen === 'reveal' && v.personality) {
+    const r = REVEAL[v.personality];
+    return revealLater && r.later ? r.later : r.bubble;
+  }
   return null;
+}
+
+/** Schedules the follow-up line ("Please do not pull my ear.", "Don't look at me, please."). */
+function scheduleLines(delay: number) {
+  clearTimeout(lineTimer);
+  if (v.screen === 'intro' && introLine) {
+    introLine = 'hi';
+    lineTimer = window.setTimeout(() => {
+      if (v.screen !== 'intro' || !introLine) return;
+      introLine = 'ear';
+      bubble(defaultBubble());
+    }, delay + 3500);
+  }
+  if (v.screen === 'reveal' && v.personality) {
+    revealLater = false;
+    const p = v.personality;
+    if (REVEAL[p].later)
+      lineTimer = window.setTimeout(() => {
+        if (v.screen !== 'reveal' || v.personality !== p) return;
+        revealLater = true;
+        bubble(defaultBubble());
+      }, delay + 5000);
+  }
 }
 
 let toastTimer = 0;
@@ -157,19 +188,16 @@ function go(screen: Screen) {
   // big reveal: the 3D build-up runs first, the name and the bubble land after it
   const big = screen === 'reveal' && (from === 'installing' || from === 'boot') && !reduced;
   if (big) el.classList.add('big');
+  scheduleLines(big ? 2400 : 0);
   bubble(null);
   if (big) window.setTimeout(() => v.screen === 'reveal' && bubble(defaultBubble()), 2400);
   else bubble(defaultBubble());
-  clearTimeout(introHint);
-  if (screen === 'intro') introHint = window.setTimeout(() => v.screen === 'intro' && !app.classList.contains('dragging') && bubble('Don’t even THINK about grabbing my ears.', 3200), 6000);
   announcer.textContent = screenTitle(v);
   if (screen !== 'boot') el.querySelector<HTMLElement>('h1, h2')?.focus({ preventScroll: true });
 
   if (screen === 'boot') window.setTimeout(() => v.screen === 'boot' && go('intro'), 2200);
   if (screen === 'installing') runInstall(el);
 }
-
-let introHint = 0;
 
 /** Restarts the reveal's staged text animation (persona chips). */
 function replayBigReveal() {
@@ -398,6 +426,7 @@ app.addEventListener('click', (e) => {
       syncStage();
       refresh();
       replayBigReveal();
+      scheduleLines(reduced ? 0 : 2400);
       bubble(null);
       window.setTimeout(() => v.screen === 'reveal' && bubble(defaultBubble()), reduced ? 0 : 2400);
       announcer.textContent = screenTitle(v);
@@ -541,6 +570,9 @@ import('./three/stage')
     stage.attachBubble(bubbleEl);
     stage.onPoke = () => sfx.poke();
     stage.onSay = (text, ms, color) => bubble(text, ms, color);
+    stage.onSulk = (on) => {
+      introLine = on ? null : 'ear';
+    };
     stage.onDrag = (on) => {
       app.classList.toggle('dragging', on);
       if (on) sfx.poke();

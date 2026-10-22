@@ -21,6 +21,7 @@ import {
   RingGeometry,
   Scene,
   ShadowMaterial,
+  SphereGeometry,
   SpotLight,
   SRGBColorSpace,
   Vector2,
@@ -51,6 +52,8 @@ const FOV = 28;
 // camera framings: plain studio vs. looking down a little onto the diorama
 const CAM_STUDIO = { y: 1.25, z: 8.2, ty: 1.12 };
 const CAM_DIORAMA = { y: 2.6, z: 8.8, ty: 0.98 };
+const SULK_MS = 120_000; // how long Roo gives you its back after being dragged
+const SULK_LINES = ['Hmph.', '…', 'Not. Talking.', 'My ear still hurts.', 'I have NOTHING to say to you.', '*angry robot noises*', 'Go find another robot.', 'I can hear you breathing. Stop it.'];
 const UPSET = ['HEY!', 'Put me DOWN!', 'Not the EAR!!', 'OW OW OW', "I'm telling!!", 'This is NOT a personality test!', 'I bite. (I don’t. But STILL.)'];
 
 export interface StageSync {
@@ -140,10 +143,14 @@ export class Stage {
   private glitch = { v: 0 };
   private blushOn = false;
   private talkTimer = 0;
+  private sulkUntil = 0;
+  private sulk = { v: 0 }; // 0 = facing you, 1 = back turned
+  private steam: Mesh[] = [];
   private hoverCheck = 0;
   onPoke: (p: Personality | null) => void = () => {};
   onSay: (text: string, ms: number, color?: string) => void = () => {};
   onDrag: (active: boolean) => void = () => {};
+  onSulk: (active: boolean) => void = () => {};
 
   constructor(private host: HTMLElement) {
     this.renderer = new WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: false });
@@ -200,6 +207,7 @@ export class Stage {
     this.envs = new Environments(this.scene, this.reduced);
     this.restArm = { L: this.robot.arm_L.rotation.z, R: this.robot.arm_R.rotation.z };
     this.restAnt = { L: this.robot.antenna_L.rotation.z, R: this.robot.antenna_R.rotation.z };
+    this.makeSteam();
     this.shadowify();
 
     // floor: real shadow catcher + soft contact blob, coloured glow, faint rings
@@ -239,14 +247,13 @@ export class Stage {
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
     document.addEventListener('visibilitychange', () => (document.hidden ? this.stop() : this.start()));
     this.drag.onLand = () => {
+      // stomps, shakes with rage
       gsap.fromTo(this.add, { sq: 0.12 }, { sq: 0, duration: 0.5, ease: 'elastic.out(1,0.4)' });
-      this.onSay('Hmph.', 1800, '#FF5A4E');
+      gsap.fromTo(this.add, { rz: 0.12 }, { rz: 0, duration: 0.9, ease: 'elastic.out(1.4,0.15)' });
+      this.sulkUntil = performance.now() + SULK_MS; // steam starts right away
+      this.onSay('HOW. DARE. YOU.', 2000, '#FF5A4E');
     };
-    this.drag.onHome = () => {
-      this.faceOverride = null;
-      this.onDrag(false);
-      this.onSay('…I’m fine. Totally fine.', 2200);
-    };
+    this.drag.onHome = () => this.startSulk();
     this.start();
     void this.swapToGLB();
   }
@@ -269,6 +276,7 @@ export class Stage {
       this.props = new Props(parts, this.reduced);
       this.acc = new Accessories(parts, this.reduced);
       if (this.state) this.applyLook();
+      this.makeSteam();
       this.shadowify();
       this.mixer = new AnimationMixer(parts.root);
       this.mixer.addEventListener('finished', (e) => (e.action as AnimationAction).fadeOut(0.25));
@@ -373,6 +381,7 @@ export class Stage {
     this.rimTarget = RIM[p ?? 'neutral'];
     this.blushOn = false;
     if (next.screen !== 'intro' && this.drag.phase === 'held') this.drag.release();
+    if (next.screen !== 'intro' && this.sulkUntil) this.endSulk('Fine. Let’s just get this over with.');
     if (!/^q[123]$/.test(next.screen)) this.props.clear();
 
     const diorama = !!p && ENV_SCREENS.includes(next.screen);
@@ -515,6 +524,10 @@ export class Stage {
 
   private poke() {
     this.activity();
+    if (this.sulkUntil) {
+      gsap.fromTo(this.add, { sq: 0.06 }, { sq: 0, duration: 0.4 });
+      return this.onSay('Don’t. Touch. Me.', 1800, '#FF5A4E');
+    }
     this.onPoke(this.state?.personality ?? null);
     if (this.reduced) {
       this.faceOverride = 'surprised';
@@ -559,6 +572,8 @@ export class Stage {
     this.stopClip();
     Object.assign(this.add, zero());
     this.faceOverride = 'angry';
+    gsap.killTweensOf(this.sulk);
+    this.sulk.v = 0;
     this.drag.grab(tipLocal, new Vector3(0, 0.8, 0), r.rig.rotation.z, new Vector3(0, HOVER, 0), this.pointerOnPlane(e, tipWorld.z));
     this.dragZ = tipWorld.z;
     this.renderer.domElement.setPointerCapture(e.pointerId);
@@ -568,12 +583,72 @@ export class Stage {
   }
   private dragZ = 0;
 
+  // ---------- sulking (after being dragged by the ear) ----------
+
+  private startSulk() {
+    this.sulkUntil = performance.now() + SULK_MS;
+    this.faceOverride = 'angry';
+    this.talkTimer = 4;
+    gsap.to(this.sulk, { v: 1, duration: 0.9, ease: 'power2.inOut' });
+    this.onDrag(false);
+    this.onSulk(true);
+    this.onSay('I’m NOT talking to you.', 2600, '#FF5A4E');
+  }
+
+  private endSulk(line: string) {
+    this.sulkUntil = 0;
+    this.faceOverride = null;
+    gsap.to(this.sulk, { v: 0, duration: 1.4, ease: 'power2.inOut' });
+    this.onSulk(false);
+    this.onSay(line, 3000);
+  }
+
+  private updateSulk(now: number, dt: number) {
+    const angry = this.sulkUntil > 0 || this.drag.active;
+    this.steam.forEach((p, i) => {
+      const k = (this.clock * 0.9 + i / this.steam.length) % 1;
+      const side = i % 2 ? 1 : -1;
+      p.visible = angry && !this.reduced;
+      p.position.set(side * (0.33 + k * 0.12), 0.45 + k * 0.6, 0);
+      p.scale.setScalar(0.5 + k * 1.3);
+      (p.material as MeshBasicMaterial).opacity = 0.5 * (1 - k);
+    });
+    if (!this.sulkUntil || this.drag.active || this.sulk.v < 1) return;
+    if (now > this.sulkUntil) return this.endSulk('…fine. I forgive you. A little.');
+    if ((this.talkTimer -= dt) <= 0) {
+      this.talkTimer = 9 + Math.random() * 6;
+      this.onSay(SULK_LINES[Math.floor(Math.random() * SULK_LINES.length)], 2200, '#FF5A4E');
+    }
+  }
+
+  /** Little steam puffs from both ears while Roo is furious. */
+  private makeSteam() {
+    this.steam.forEach((p) => p.removeFromParent());
+    const m = new MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.5, depthWrite: false });
+    this.steam = Array.from({ length: 8 }, () => {
+      const p = new Mesh(new SphereGeometry(0.07, 10, 8), m);
+      p.visible = false;
+      this.robot.empties.head_top.add(p);
+      return p;
+    });
+  }
+
   // ---------- idle ----------
 
   private computeIdle(t: number): Pose {
     const o = zero();
     this.idleFace = null;
     if (this.reduced) return o;
+    if (this.sulk.v > 0) {
+      const s = this.sulk.v;
+      const huff = Math.max(0, Math.sin((t * Math.PI * 2) / 5)) ** 16; // a big huff every 5 s
+      o.ry = Math.PI * s + Math.sin(t * 0.8) * 0.06 * s;
+      o.armL = o.armR = -0.6 * s; // arms crossed
+      o.sq = huff * 0.07 * s;
+      o.y = huff * 6 * PX;
+      o.antL = o.antR = -0.12 * s; // antennas stiff with rage
+      return o;
+    }
     const p = this.previewing ?? this.state?.personality ?? null;
     const amp = this.previewing ? 0.6 : 1;
     const TAU = Math.PI * 2;
@@ -704,7 +779,7 @@ export class Stage {
       const held = this.drag.phase === 'held';
       const squirm = held ? Math.sin(this.clock * 21) * 0.07 : 0;
       r.rig.position.copy(this.drag.pos);
-      r.rig.rotation.set(0, held ? Math.sin(this.clock * 9) * 0.15 : 0, this.drag.rotZ + squirm);
+      r.rig.rotation.set(0, held ? Math.sin(this.clock * 9) * 0.15 : 0, this.drag.rotZ + squirm + a.rz);
       r.body.scale.set(1 + a.sq * 0.5, 1 - a.sq, 1 + a.sq * 0.5);
       const flail = held ? 1 : 0.15;
       r.arm_L.rotation.z = this.restArm.L - (0.9 + Math.sin(this.clock * 26) * 0.7) * flail;
@@ -715,7 +790,8 @@ export class Stage {
       }
     } else {
       r.rig.position.set(i.x + a.x, HOVER + i.y + a.y, i.z + a.z);
-      r.rig.rotation.set(i.rx + a.rx - this.look.y * 3 * DEG, i.ry + a.ry + this.look.x * 10 * DEG, i.rz + a.rz);
+      const lookK = 1 - this.sulk.v;
+      r.rig.rotation.set(i.rx + a.rx - this.look.y * 3 * DEG * lookK, i.ry + a.ry + this.look.x * 10 * DEG * lookK, i.rz + a.rz);
       r.body.scale.set(1 + sq * 0.5 + i.wide, 1 - sq, 1 + sq * 0.5 + i.wide);
       r.arm_L.rotation.z = this.restArm.L - (i.armL + a.armL);
       r.arm_R.rotation.z = this.restArm.R + (i.armR + a.armR);
@@ -770,6 +846,7 @@ export class Stage {
     this.camera.position.set(0, this.cam.y + this.dolly.y, (this.cam.z + this.dolly.z) * this.distK);
     this.camera.lookAt(0, this.cam.ty, 0);
 
+    this.updateSulk(now, dt);
     this.mixer?.update(dt); // baked clips override idle on the nodes they animate
     this.props.update(this.clock);
     this.envs.update(this.clock, { watched: this.watched, beat: (this.clock % 0.5) / 0.5 });
@@ -799,11 +876,12 @@ export class Stage {
     if (now - this.lastActivity < 20000 || this.moveTl || !this.state || this.drag.active) return;
     this.lastActivity = now;
     const p = this.state.personality;
-    if (!p && this.state.screen === 'intro') return this.onSay('Don’t even THINK about grabbing my ears.', 3000);
+    if (this.sulkUntil) return;
     this.playMove(p === 'playful' ? 'jump' : p === 'dramatic' ? 'spin' : p === 'calm' ? 'wave' : p === 'shy' ? 'wave' : 'surprise');
   }
 
   private glowColor(): string {
+    if (this.faceOverride === 'angry') return '#FF5A4E';
     const id = this.state?.look.glow ?? 'auto';
     if (id !== 'auto') return GLOW_COLORS.find((g) => g.id === id)?.hex ?? '#ffffff';
     const p = this.state?.personality;

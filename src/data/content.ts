@@ -59,12 +59,14 @@ export const QUESTIONS: Question[] = [
   },
 ];
 
-export const REVEAL: Record<Personality, { name: string; quote: string; traits: [string, string, string]; bubble: string }> = {
+// `later` replaces the bubble after Roo has been on screen a while
+export const REVEAL: Record<Personality, { name: string; quote: string; traits: [string, string, string]; bubble: string; later?: string }> = {
   shy: {
     name: 'Roo the Quiet One',
     quote: "Oh… you're still looking at me?",
     traits: ['Quiet observer', 'Easily flustered', 'Secretly hilarious'],
     bubble: '…hi.',
+    later: 'Don’t look at me, please.',
   },
   playful: {
     name: 'Roo the Chaos Buddy',

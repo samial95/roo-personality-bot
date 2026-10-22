@@ -35,3 +35,4 @@
 - Calm idle float raised to 40 px; baked clips use the same offset.
 - Ear-drag only on the intro and not under reduced motion; physics is a damped pendulum driven by cursor acceleration (clamped) from the grabbed ear tip.
 - Added a 13th face expression, `angry`, for the drag tantrum.
+- Published via a prebuilt gh-pages branch (legacy Pages) because GitHub Actions was degraded and never registered the workflow; switch back to build_type=workflow later.

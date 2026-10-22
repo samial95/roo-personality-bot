@@ -1,6 +1,7 @@
 # PROGRESS
 
 ## Current phase
+LIVE: https://samial95.github.io/roo-personality-bot/ (repo samial95/roo-personality-bot, Pages from gh-pages branch)
 6 — Delight + polish (Phases 2–5 functionally done; Phase 1 deploy blocked on `gh auth login`)
 
 ## Done
@@ -21,14 +22,14 @@
   4 dioramas (blanket fort, ball-pit party, theatre, zen garden); exaggerated personalities; intro ear-drag; capital-R logo
 
 ## Next 5 tasks
-1. Deploy to GitHub Pages once `gh auth login` is done (repo + push + Pages)
+1. When GitHub Actions recovers: switch Pages back to the workflow so pushes to main auto-deploy
 2. Re-run Playwright after loops 2–3 (rename, props, GLB, full-screen canvas) and fix fallout
 3. Split RectArea LTC tables / environments into their own lazy chunk (3D chunk is 285 KB gz)
 4. Sound polish + Lighthouse pass (perf/a11y/best practices ≥ 90), OG image, favicon
 5. Mobile: tap-to-preview props (hover doesn't exist on phones)
 
 ## Known issues (ranked)
-1. Not deployed — gh not logged in
+1. Pages serves a hand-built gh-pages branch (Actions was degraded); updates need a manual rebuild + push until switched back
 2. Playwright suite not re-run since the rename/props/GLB work (paused at user's request)
 3. 3D chunk grew to 285 KB gz (RectAreaLight tables + environments) — still lazy, initial JS 39 KB
 4. Vite base path still `/pip-personality-bot/` — rename repo to roo-*? (user's call)

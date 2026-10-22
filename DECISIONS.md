@@ -26,3 +26,12 @@
 - During a baked clip, GSAP still runs on a throwaway pose to fire face/floor events at the same times.
 - Procedural robot stays as the instant placeholder and fallback if the GLB fails to load.
 - Using three r186's bundled Draco decoder (Vite hashes it) instead of copying it to public/.
+- Canvas is full-viewport (needed so Roo can be dragged anywhere); camera.setViewOffset keeps the look-at point centred on the .stage box and fov is scaled so Roo's size still follows the box height.
+- PCFShadowMap (r186 removed PCFSoftShadowMap) with shadow.radius; key frustum ±3.4 to keep texel density high.
+- RectAreaLight for the soft fill (no shadows by design); shadows come from the key and the reveal spotlight.
+- Diorama camera framing (y 2.6, looking down slightly) so the platforms read; studio framing elsewhere.
+- Dramatic curtains sit in front of Roo and open during the reveal (spec: "curtains open"); stage dims to 40%.
+- Shy exaggeration follows closed-posture references: turned 35°, hunched, head down, arms tucked, tremble, hides when the cursor is within 260 px.
+- Calm idle float raised to 40 px; baked clips use the same offset.
+- Ear-drag only on the intro and not under reduced motion; physics is a damped pendulum driven by cursor acceleration (clamped) from the grabbed ear tip.
+- Added a 13th face expression, `angry`, for the drag tantrum.

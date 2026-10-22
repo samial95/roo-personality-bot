@@ -16,25 +16,28 @@
 - Phase 4: `npm run model` = bake (moves.ts → robot.json) → Blender build → roo.glb (201 KB, ~6k tris,
   Draco, 32 clips) → check-glb ✓. Runtime swaps in the GLB and plays clips via AnimationMixer
 - Playwright: 33 tests (scoring/URL units + click-through of every path, desktop + mobile)
+- Loop 3: cinematic three-point lighting + real soft shadows; full-viewport canvas framed via view offset;
+  big reveal (lights out → spotlight → diorama builds → camera pulls back → letters tumble in);
+  4 dioramas (blanket fort, ball-pit party, theatre, zen garden); exaggerated personalities; intro ear-drag; capital-R logo
 
 ## Next 5 tasks
 1. Deploy to GitHub Pages once `gh auth login` is done (repo + push + Pages)
-2. Reveal props/particles: shy blanket + hearts, playful confetti + ball, dramatic curtains + spotlight + rose, calm orbs + plant
-3. Re-run Playwright after the Roo rename/props/GLB changes (tests already renamed)
+2. Re-run Playwright after loops 2–3 (rename, props, GLB, full-screen canvas) and fix fallout
+3. Split RectArea LTC tables / environments into their own lazy chunk (3D chunk is 285 KB gz)
 4. Sound polish + Lighthouse pass (perf/a11y/best practices ≥ 90), OG image, favicon
 5. Mobile: tap-to-preview props (hover doesn't exist on phones)
 
 ## Known issues (ranked)
 1. Not deployed — gh not logged in
 2. Playwright suite not re-run since the rename/props/GLB work (paused at user's request)
-3. Reveal props/particles from §6 still missing (biggest delight gap)
+3. 3D chunk grew to 285 KB gz (RectAreaLight tables + environments) — still lazy, initial JS 39 KB
 4. Vite base path still `/pip-personality-bot/` — rename repo to roo-*? (user's call)
 5. Lighthouse / LCP not measured yet
 
-## Last critique score (loop 2, estimated — suite not re-run)
-- Visual match 7 — layout/type/robot close to Figma; reveal props missing
-- Ease of use 8 — clear CTAs, Home + Esc everywhere, no dead ends found
-- Delight 7 — hover props + coloured bubbles land; reveals need their props
-- Performance 7 — 60 fps on GPU, initial JS 39 KB gz, GLB 201 KB; Lighthouse pending
-- Accessibility 7 — focus rings, keyboard, aria-live; contrast not audited
-- Code health 8 — one source of truth for moves (site + Blender), typed, tested
+## Last critique score (loop 3, from GPU screenshots at 1440×900 and 390×844)
+- Visual match 8 — matches Figma layout; lighting/shadows now read as a real render
+- Ease of use 8 — clear CTAs, Home + Esc everywhere; ear-drag hinted by a bubble after 6 s
+- Delight 9 — big reveal + dioramas + exaggerated personalities + ear-drag tantrum
+- Performance 7 — 60 fps on GPU; shadows add cost; adaptive DPR fallback; Lighthouse pending
+- Accessibility 7 — reveal name keeps an aria-label; reduced motion skips build/dolly/drag
+- Code health 8 — modules: stage, environments, drag, props, accessories, moves (shared with Blender)

@@ -6,7 +6,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 4173",
     "lint": "eslint src tests",
-    "test": "playwright test"
+    "test": "playwright test",
+    "bake": "node --experimental-strip-types --no-warnings scripts/bake-clips.ts"
   },
   "dependencies": {
     "gsap": "^3.15.0",

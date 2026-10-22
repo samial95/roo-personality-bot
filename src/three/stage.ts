@@ -26,10 +26,7 @@ import type { Look, Screen } from '../state';
 import { Face, type Expression } from './face';
 import { buildProceduralRobot, type RobotParts } from './ProceduralRobot';
 import { Accessories } from './accessories';
-
-const PX = 1 / 216; // one Figma pixel in world units at the default framing
-const DEG = Math.PI / 180;
-const HOVER = 0.32;
+import { DEG, HOVER, MOVE_FACE, moveTimeline, pokeTimeline, PX, revealTimeline, zero, type MoveCtx, type Pose } from './moves';
 
 const FACE_FOR: Record<Personality, Expression> = {
   shy: 'shy',
@@ -38,24 +35,6 @@ const FACE_FOR: Record<Personality, Expression> = {
   calm: 'calm',
 };
 const RIM: Record<Personality | 'neutral', number> = { neutral: 0.6, shy: 0.5, playful: 1.0, dramatic: 1.2, calm: 0.7 };
-
-/** Additive pose channels; idle and moves each produce one and they are summed. */
-interface Pose {
-  x: number;
-  y: number;
-  z: number;
-  rx: number;
-  ry: number;
-  rz: number;
-  sq: number; // squash (+) / stretch (−), clamped to ±12%
-  wide: number;
-  armL: number; // raise outward, radians
-  armR: number;
-  antL: number; // tilt outward
-  antR: number;
-  antX: number; // whip back/forward
-}
-const zero = (): Pose => ({ x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0, sq: 0, wide: 0, armL: 0, armR: 0, antL: 0, antR: 0, antX: 0 });
 
 export interface StageSync {
   screen: Screen;
@@ -308,34 +287,20 @@ export class Stage {
       Object.assign(this.add, zero());
       return;
     }
-    const tl = gsap.timeline();
-    if (p === 'shy') {
-      tl.fromTo(this.add, { y: -0.7 }, { y: 0, duration: 0.9, ease: 'power2.out' })
-        .call(() => (this.faceOverride = 'default'))
-        .to(this.add, { ry: 0.32, duration: 0.25 }, '+=0.3') // peek at the camera (cancels the idle turn)
-        .call(() => (this.faceOverride = null), [], '+=0.5')
-        .to(this.add, { ry: 0, armL: -0.25, armR: -0.25, duration: 0.6, ease: 'sine.inOut' })
-        .call(() => (this.blushOn = true))
-        .to(this.add, { armL: 0, armR: 0, duration: 0.6 }, '+=0.6');
-    } else if (p === 'playful') {
-      tl.fromTo(this.add, { y: 3 }, { y: 0, duration: 0.55, ease: 'power3.in' })
-        .to(this.add, { sq: 0.12, duration: 0.08 })
-        .call(() => this.pulse())
-        .to(this.add, { sq: 0, duration: 0.3, ease: 'elastic.out(1,0.4)' })
-        .to(this.add, { ry: Math.PI * 2, duration: 0.6, ease: 'power2.inOut' })
-        .set(this.add, { ry: 0 })
-        .to(this.add, { armL: 1.2, armR: 1.2, duration: 0.25, ease: 'back.out(2)' })
-        .to(this.add, { armL: 0, armR: 0, duration: 0.4 }, '+=0.7');
-    } else if (p === 'dramatic') {
-      tl.fromTo(this.add, { ry: Math.PI }, { ry: 0, duration: 1.6, ease: 'power2.inOut' })
-        .to(this.add, { armL: 2.3, armR: 2.3, duration: 0.35, ease: 'back.out(1.6)' })
-        .to(this.add, { armL: 0, armR: 0, duration: 0.5, ease: 'power2.inOut' }, '+=0.8');
-    } else {
-      tl.fromTo(this.add, { y: -0.4 }, { y: 0, duration: 2, ease: 'sine.inOut' })
-        .call(() => this.face.blink(performance.now(), 400))
-        .call(() => this.pulse(), [], '-=0.4');
-    }
-    this.runMove(tl);
+    this.runMove(revealTimeline(p, this.ctx()));
+  }
+
+  /** Callbacks the shared move timelines use to drive face, floor and blush. */
+  private ctx(): MoveCtx {
+    return {
+      pose: this.add,
+      p: this.state?.personality ?? null,
+      balloon: this.state?.look.acc.hand === 'balloon',
+      face: (e) => (this.faceOverride = e),
+      pulse: () => this.pulse(),
+      blush: () => (this.blushOn = true),
+      blink: (ms) => this.face.blink(performance.now(), ms),
+    };
   }
 
   // ---------- moves & pokes ----------
@@ -353,124 +318,28 @@ export class Stage {
     });
   }
 
-  private personalityMods() {
-    const p = this.state?.personality;
-    if (p === 'shy') return { amp: 0.7, speed: 0.8, extra: 0, hold: 0, ease: 'power2.out' };
-    if (p === 'playful') return { amp: 1.3, speed: 1, extra: 1, hold: 0, ease: 'power2.out' };
-    if (p === 'dramatic') return { amp: 1, speed: 1, extra: 0, hold: 0.6, ease: 'power2.out' };
-    if (p === 'calm') return { amp: 1, speed: 0.6, extra: 0, hold: 0, ease: 'sine.inOut' };
-    return { amp: 1, speed: 1, extra: 0, hold: 0, ease: 'power2.out' };
-  }
-
   private playMove(m: Move): number {
-    const { amp, speed, extra, hold, ease } = this.personalityMods();
-    const calm = this.state?.personality === 'calm';
-    const sq = (v: number) => (calm ? 0 : v);
-    const tl = gsap.timeline();
-    this.add = Object.assign(this.add, zero());
+    Object.assign(this.add, zero());
     if (this.reduced) {
-      const face: Record<Move, Expression> = { dance: 'happy', wave: 'happy', spin: 'dizzy', jump: 'surprised', nap: 'sleepy', surprise: 'surprised' };
-      this.faceOverride = face[m];
-      tl.to({}, { duration: 1.2 });
-      this.runMove(tl);
+      this.faceOverride = MOVE_FACE[m];
+      this.runMove(gsap.timeline().to({}, { duration: 1.2 }));
       return 1.2;
     }
-    const reps = 1 + extra;
-    switch (m) {
-      case 'dance':
-        this.faceOverride = 'happy';
-        for (let i = 0; i < 4 * reps; i++) {
-          const s = i % 2 ? 1 : -1;
-          tl.to(this.add, { x: s * 12 * PX * amp, rz: -s * 4 * DEG * amp, armL: (s > 0 ? 25 : -5) * DEG * amp, armR: (s > 0 ? -5 : 25) * DEG * amp, y: 6 * PX * amp, duration: 0.25, ease }).to(this.add, { y: 0, duration: 0.25, ease: 'sine.in' });
-        }
-        break;
-      case 'wave':
-        this.faceOverride = 'happy';
-        tl.to(this.add, { armR: 2.09 * Math.min(amp, 1.1), rz: -4 * DEG, duration: 0.3, ease: 'back.out(1.6)' });
-        for (let i = 0; i < 3 * reps; i++) tl.to(this.add, { armR: `+=${20 * DEG * amp}`, duration: 0.16, yoyo: true, repeat: 1, ease: 'sine.inOut' });
-        break;
-      case 'spin':
-        for (let i = 0; i < reps; i++) tl.to(this.add, { ry: `+=${Math.PI * 2}`, duration: 0.8, ease: 'power2.inOut' });
-        tl.call(() => (this.faceOverride = 'dizzy')).to(this.add, { rz: 3 * DEG, duration: 0.15, yoyo: true, repeat: 3 }).set(this.add, { ry: 0 });
-        break;
-      case 'jump': {
-        const h = 80 * PX * amp * (this.state?.look.acc.hand === 'balloon' ? 1.4 : 1);
-        for (let i = 0; i < reps; i++) {
-          tl.to(this.add, { sq: sq(0.1), duration: 0.12, ease: 'power2.out' })
-            .to(this.add, { sq: sq(-0.08), y: h, duration: 0.32, ease: 'power2.out' })
-            .to(this.add, { sq: 0, duration: 0.15 }, '<0.12')
-            .to(this.add, { y: 0, duration: 0.3, ease: 'power2.in' })
-            .call(() => this.pulse())
-            .to(this.add, { sq: sq(0.1), duration: 0.07 })
-            .to(this.add, { sq: 0, duration: 0.25, ease: 'elastic.out(1,0.5)' });
-        }
-        break;
-      }
-      case 'nap':
-        this.faceOverride = 'sleepy';
-        tl.to(this.add, { rx: 15 * DEG * Math.min(amp, 1), y: -8 * PX, armL: -0.1, armR: -0.1, antL: 0.3, antR: 0.3, duration: 0.8, ease: 'sine.inOut' }).to({}, { duration: 1.6 * reps });
-        break;
-      case 'surprise':
-        this.faceOverride = 'surprised';
-        tl.to(this.add, { antL: -0.25, antR: -0.25, armL: 45 * DEG * amp, armR: 45 * DEG * amp, z: -10 * PX * 3, sq: sq(-0.06), duration: 0.18, ease: 'back.out(2)' }).to({}, { duration: 0.6 * reps });
-        break;
-    }
-    if (hold) tl.to(this.add, { rz: 3 * DEG, armL: '+=0.4', duration: 0.2 }).to({}, { duration: hold });
-    tl.timeScale(speed);
+    const tl = moveTimeline(m, this.ctx());
     this.runMove(tl);
     this.currentMove = m;
-    return tl.duration() / speed;
+    return tl.duration() / tl.timeScale();
   }
 
   private poke() {
     this.activity();
-    const p = this.state?.personality ?? null;
-    this.onPoke(p);
+    this.onPoke(this.state?.personality ?? null);
     if (this.reduced) {
       this.faceOverride = 'surprised';
       return this.runMove(gsap.timeline().to({}, { duration: 0.8 }));
     }
     Object.assign(this.add, zero());
-    const tl = gsap.timeline();
-    if (p === 'shy') {
-      this.faceOverride = 'wink'; // one eye peeking out
-      tl.to(this.add, { armL: -0.9, armR: -0.9, rx: 8 * DEG, duration: 0.25, ease: 'power2.out' }).to({}, { duration: 1.2 });
-    } else if (p === 'playful') {
-      this.faceOverride = 'playful';
-      tl.to(this.add, { y: 60 * PX, sq: -0.08, duration: 0.3, ease: 'power2.out' })
-        .to(this.add, { ry: Math.PI * 2, duration: 0.5, ease: 'none' }, '<')
-        .to(this.add, { y: 0, sq: 0, duration: 0.25, ease: 'power2.in' })
-        .to(this.add, { sq: 0.1, duration: 0.06 })
-        .to(this.add, { sq: 0, duration: 0.25 })
-        .set(this.add, { ry: 0 });
-    } else if (p === 'dramatic') {
-      this.faceOverride = 'surprised';
-      tl.to(this.add, { rx: -70 * DEG, y: -20 * PX, duration: 0.5, ease: 'power2.in' })
-        .call(() => (this.faceOverride = 'dizzy'))
-        .to({}, { duration: 0.4 })
-        .to(this.add, { rx: 0, y: 0, duration: 0.35, ease: 'back.out(2)' })
-        .call(() => (this.faceOverride = 'happy'))
-        .to(this.add, { rx: 25 * DEG, armR: 0.6, duration: 0.3 })
-        .to(this.add, { rx: 0, armR: 0, duration: 0.3 }, '+=0.3');
-    } else if (p === 'calm') {
-      this.faceOverride = 'calm';
-      tl.to(this.add, { z: -20 * PX * 2, duration: 1.2, ease: 'sine.out' })
-        .to(this.add, { armR: 1.6, duration: 0.6, ease: 'sine.inOut' }, '<0.3')
-        .to(this.add, { armR: '+=0.3', duration: 0.5, yoyo: true, repeat: 1, ease: 'sine.inOut' })
-        .call(() => this.pulse())
-        .to(this.add, { z: 0, armR: 0, duration: 1, ease: 'sine.inOut' });
-    } else {
-      this.faceOverride = 'surprised';
-      tl.to(this.add, { sq: 0.1, antX: -0.5, duration: 0.08 })
-        .to(this.add, { sq: -0.05, y: 20 * PX, duration: 0.2, ease: 'power2.out' })
-        .to(this.add, { sq: 0, y: 0, duration: 0.2, ease: 'power2.in' })
-        .to(this.add, { rz: 6 * DEG, duration: 0.09 })
-        .to(this.add, { rz: -6 * DEG, duration: 0.18 })
-        .to(this.add, { rz: 6 * DEG, duration: 0.18 })
-        .to(this.add, { rz: -6 * DEG, duration: 0.18 })
-        .to(this.add, { rz: 0, antX: 0, duration: 0.12 });
-    }
-    this.runMove(tl);
+    this.runMove(pokeTimeline(this.ctx()));
   }
 
   // ---------- idle ----------

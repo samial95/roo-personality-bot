@@ -15,14 +15,23 @@ import {
 } from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
-// Proportions from the reference sheet (units ≈ 100 mm).
-export const BODY_W = 1.08;
-export const BODY_H = 1.58;
-export const BODY_D = 0.96;
-const BODY_R = 0.3;
-const FACE_W = 0.8;
-const FACE_H = 0.66;
-const FACE_Y = 1.1;
+// Proportions from the reference sheet (units ≈ 100 mm). Shared with blender/make_robot.py via scripts/bake-clips.ts.
+const W = 1.08;
+const H = 1.58;
+const D = 0.96;
+export const DIMS = {
+  body: { w: W, h: H, d: D, r: 0.3 },
+  face: { w: 0.8, h: 0.66, r: 0.22, y: 1.1, z: D / 2 - 0.035, depth: 0.03, bevel: 0.025 },
+  slot: { w: 0.34, h: 0.09, d: 0.03, r: 0.04, y: 0.56, z: D / 2 - 0.005 },
+  base: { w: 0.34, h: 0.09, d: 0.3, r: 0.04, y: 0.02, z: D / 2 - 0.16 },
+  antenna: { x: 0.31, y: H - 0.05, tilt: 0.3, collarR: 0.085, collarH: 0.05, stemR: 0.06, stemH: 0.24, capR: 0.17, capH: 0.2, capY: 0.2, tipY: 0.42 },
+  arm: { x: W / 2 + 0.01, y: 0.9, z: 0.02, splay: 0.22, sx: 0.12, sy: 0.23, sz: 0.13, offX: 0.05, offY: -0.2 },
+  hand: { x: 0.07, y: -0.42, z: 0.05 },
+  groundL: { x: -1.25, z: 0.3 },
+};
+export const BODY_W = W;
+export const BODY_H = H;
+export const BODY_D = D;
 
 /** Cylinder with rounded top/bottom edges (antenna caps). */
 function roundedCylinder(r: number, h: number, b: number, seg = 4): LatheGeometry {
@@ -101,40 +110,43 @@ export function buildProceduralRobot(faceTex: Texture): RobotParts {
   const root = new Group();
   root.name = 'pip';
   const rig = new Group();
+  rig.name = 'rig';
   root.add(rig);
 
+  const { body: B, face: F, slot: S, base: BA, antenna: A, arm: AR, hand: HA, groundL: GL } = DIMS;
+
   // body — pivot at bottom centre
-  const bodyGeo = new RoundedBoxGeometry(BODY_W, BODY_H, BODY_D, 6, BODY_R);
-  bodyGeo.translate(0, BODY_H / 2, 0);
+  const bodyGeo = new RoundedBoxGeometry(B.w, B.h, B.d, 6, B.r);
+  bodyGeo.translate(0, B.h / 2, 0);
   const body = new Mesh(bodyGeo, mats.body);
   body.name = 'body';
   rig.add(body);
 
   // face_screen — glossy inset that bulges slightly
-  const faceGeo = new ExtrudeGeometry(roundedRectShape(FACE_W, FACE_H, 0.22), {
-    depth: 0.03,
+  const faceGeo = new ExtrudeGeometry(roundedRectShape(F.w, F.h, F.r), {
+    depth: F.depth,
     bevelEnabled: true,
-    bevelThickness: 0.025,
+    bevelThickness: F.bevel,
     bevelSize: 0.02,
     bevelSegments: 4,
     curveSegments: 10,
   });
-  squareUVs(faceGeo, FACE_W + 0.04);
+  squareUVs(faceGeo, F.w + 0.04);
   const face_screen = new Mesh(faceGeo, mats.screen);
   face_screen.name = 'face_screen';
-  face_screen.position.set(0, FACE_Y, BODY_D / 2 - 0.035);
+  face_screen.position.set(0, F.y, F.z);
   body.add(face_screen);
 
   // chest slot below the face
-  const slot = new Mesh(new RoundedBoxGeometry(0.34, 0.09, 0.03, 3, 0.04), mats.body);
+  const slot = new Mesh(new RoundedBoxGeometry(S.w, S.h, S.d, 3, S.r), mats.body);
   slot.name = 'chest_slot';
-  slot.position.set(0, 0.56, BODY_D / 2 - 0.005);
+  slot.position.set(0, S.y, S.z);
   body.add(slot);
 
   // base — dark foot pad with the notch facing forward
-  const base = new Mesh(new RoundedBoxGeometry(0.34, 0.09, 0.3, 3, 0.04), dark);
+  const base = new Mesh(new RoundedBoxGeometry(BA.w, BA.h, BA.d, 3, BA.r), dark);
   base.name = 'base';
-  base.position.set(0, 0.02, BODY_D / 2 - 0.16);
+  base.position.set(0, BA.y, BA.z);
   body.add(base);
 
   // antennas — pivot at the metal joint
@@ -142,16 +154,17 @@ export function buildProceduralRobot(faceTex: Texture): RobotParts {
   const makeAntenna = (side: -1 | 1) => {
     const g = new Group();
     g.name = side < 0 ? 'antenna_L' : 'antenna_R';
-    g.position.set(side * 0.31, BODY_H - 0.05, 0);
-    g.rotation.z = -side * 0.3;
-    const collar = new Mesh(roundedCylinder(0.085, 0.05, 0.02), mats.joint);
-    const stem = new Mesh(roundedCylinder(0.06, 0.24, 0.01), mats.joint);
-    const cap = new Mesh(roundedCylinder(0.17, 0.2, 0.06), mats.body);
-    cap.position.y = 0.2;
+    g.position.set(side * A.x, A.y, 0);
+    g.rotation.z = -side * A.tilt;
+    const collar = new Mesh(roundedCylinder(A.collarR, A.collarH, 0.02), mats.joint);
+    const stem = new Mesh(roundedCylinder(A.stemR, A.stemH, 0.01), mats.joint);
+    const cap = new Mesh(roundedCylinder(A.capR, A.capH, 0.06), mats.body);
+    cap.name = side < 0 ? 'antenna_cap_L' : 'antenna_cap_R';
+    cap.position.y = A.capY;
     caps.push(cap);
     const tip = new Object3D();
     tip.name = side < 0 ? 'antenna_tip_L' : 'antenna_tip_R';
-    tip.position.y = 0.42;
+    tip.position.y = A.tipY;
     g.add(collar, stem, cap, tip);
     body.add(g);
     return { g, tip };
@@ -163,11 +176,11 @@ export function buildProceduralRobot(faceTex: Texture): RobotParts {
   const makeArm = (side: -1 | 1) => {
     const g = new Group();
     g.name = side < 0 ? 'arm_L' : 'arm_R';
-    g.position.set(side * (BODY_W / 2 + 0.01), 0.9, 0.02);
-    g.rotation.z = side * 0.22;
+    g.position.set(side * AR.x, AR.y, AR.z);
+    g.rotation.z = side * AR.splay;
     const m = new Mesh(new SphereGeometry(1, 24, 16), mats.body);
-    m.scale.set(0.12, 0.23, 0.13);
-    m.position.set(side * 0.05, -0.2, 0);
+    m.scale.set(AR.sx, AR.sy, AR.sz);
+    m.position.set(side * AR.offX, AR.offY, 0);
     g.add(m);
     body.add(g);
     return g;
@@ -177,22 +190,22 @@ export function buildProceduralRobot(faceTex: Texture): RobotParts {
 
   const hand_R = new Object3D();
   hand_R.name = 'hand_R';
-  hand_R.position.set(0.07, -0.42, 0.05);
+  hand_R.position.set(HA.x, HA.y, HA.z);
   arm_R.add(hand_R);
 
   const head_top = new Object3D();
   head_top.name = 'head_top';
-  head_top.position.set(0, BODY_H, 0);
+  head_top.position.set(0, B.h, 0);
   body.add(head_top);
 
   const face_overlay = new Object3D();
   face_overlay.name = 'face_overlay';
-  face_overlay.position.set(0, FACE_Y, BODY_D / 2 + 0.03);
+  face_overlay.position.set(0, F.y, B.d / 2 + 0.03);
   body.add(face_overlay);
 
   const ground_L = new Object3D();
   ground_L.name = 'ground_L';
-  ground_L.position.set(-1.25, 0, 0.3);
+  ground_L.position.set(GL.x, 0, GL.z);
   root.add(ground_L);
 
   return {

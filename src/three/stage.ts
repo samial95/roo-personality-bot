@@ -25,6 +25,7 @@ import { ACCENT, ACCENT_COLORS, BODY_COLORS, GLOW_COLORS, type Move, type Person
 import type { Look, Screen } from '../state';
 import { Face, type Expression } from './face';
 import { buildProceduralRobot, type RobotParts } from './ProceduralRobot';
+import { Accessories } from './accessories';
 
 const PX = 1 / 216; // one Figma pixel in world units at the default framing
 const DEG = Math.PI / 180;
@@ -81,6 +82,8 @@ export class Stage {
   private scene = new Scene();
   private camera = new PerspectiveCamera(28, 1, 0.1, 50);
   private robot: RobotParts;
+  private acc: Accessories;
+  private currentMove: Move | null = null;
   private face = new Face();
   private rim: PointLight;
   private floorGlow: Mesh;
@@ -137,6 +140,7 @@ export class Stage {
     this.robot = buildProceduralRobot(this.face.texture);
     this.robot.rig.position.y = HOVER;
     this.scene.add(this.robot.root);
+    this.acc = new Accessories(this.robot, this.reduced);
     this.restArm = { L: this.robot.arm_L.rotation.z, R: this.robot.arm_R.rotation.z };
     this.restAnt = { L: this.robot.antenna_L.rotation.z, R: this.robot.antenna_R.rotation.z };
 
@@ -195,7 +199,7 @@ export class Stage {
   sync(next: StageSync) {
     const prev = this.state;
     this.state = { ...next, look: { ...next.look, acc: { ...next.look.acc } } };
-    this.applyLook();
+    this.applyLook(prev?.look.acc.ground);
     if (prev?.screen !== next.screen || prev?.personality !== next.personality) this.enter(next, prev);
   }
 
@@ -338,10 +342,12 @@ export class Stage {
 
   private runMove(tl: gsap.core.Timeline) {
     this.moveTl?.kill();
+    this.currentMove = null;
     this.moveTl = tl;
     tl.eventCallback('onComplete', () => {
       if (this.moveTl !== tl) return;
       this.moveTl = null;
+      this.currentMove = null;
       this.faceOverride = null;
       gsap.to(this.add, { ...zero(), duration: 0.25 });
     });
@@ -412,6 +418,7 @@ export class Stage {
     if (hold) tl.to(this.add, { rz: 3 * DEG, armL: '+=0.4', duration: 0.2 }).to({}, { duration: hold });
     tl.timeScale(speed);
     this.runMove(tl);
+    this.currentMove = m;
     return tl.duration() / speed;
   }
 
@@ -614,6 +621,7 @@ export class Stage {
     this.rim.intensity += (this.rimTarget * 10 * pulse - this.rim.intensity) * Math.min(1, dt * 4);
     (this.floorGlow.material as MeshBasicMaterial).color.copy(this.accent);
 
+    this.acc.update(this.clock, this.currentMove === 'dance' || this.state?.look.acc.ground === 'speaker');
     this.renderer.render(this.scene, this.camera);
     this.positionBubble();
     this.idleAttention(now);
@@ -634,8 +642,12 @@ export class Stage {
     return p ? ACCENT[p] : '#ffffff';
   }
 
-  private applyLook() {
+  private applyLook(prevGround?: string) {
     const l = this.state!.look;
+    const p = this.state!.personality;
+    this.acc.apply(l.acc, p ? ACCENT[p] : ACCENT.neutral);
+    // the speaker starts a dance as soon as it lands
+    if (l.acc.ground === 'speaker' && prevGround !== undefined && prevGround !== 'speaker') setTimeout(() => this.playMove('dance'), 400);
     const m = this.robot.mats;
     m.body.color.set(BODY_COLORS.find((c) => c.id === l.body)?.hex ?? '#F2F2F2');
     m.joint.color.set(ACCENT_COLORS.find((c) => c.id === l.accent)?.hex ?? '#C9C9C9');

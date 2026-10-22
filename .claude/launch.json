@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pip-dev",
+      "runtimeExecutable": "/Users/elafalsalman/.local/node/bin/npx",
+      "runtimeArgs": ["vite", "--port", "5173", "--strictPort"],
+      "port": 5173,
+      "env": { "PATH": "/Users/elafalsalman/.local/node/bin:/usr/bin:/bin" }
+    }
+  ]
+}

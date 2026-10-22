@@ -8,7 +8,7 @@ export async function loadRobot(faceTex: Texture): Promise<{ parts: RobotParts; 
     import('three/examples/jsm/loaders/DRACOLoader.js'),
   ]);
   const base = import.meta.env.BASE_URL;
-  const draco = new DRACOLoader().setDecoderPath(`${base}draco/`);
+  const draco = new DRACOLoader(); // three bundles its decoder (hashed by Vite)
   const gltf = await new GLTFLoader().setDRACOLoader(draco).loadAsync(`${base}models/roo.glb`);
   draco.dispose();
 

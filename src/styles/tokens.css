@@ -1,0 +1,51 @@
+/* Pip design tokens (Figma "Pip Tokens") */
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --bg-canvas: #09090b;
+  --bg-elevated: #121215;
+  --surface-panel: rgba(255, 255, 255, 0.04);
+  --surface-raised: rgba(255, 255, 255, 0.07);
+  --surface-hover: rgba(255, 255, 255, 0.1);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --text-primary: #fafafa;
+  --text-secondary: rgba(255, 255, 255, 0.62);
+  --text-tertiary: rgba(255, 255, 255, 0.38);
+  --text-on-light: #09090b;
+
+  --accent-shy: #ff8fb1;
+  --accent-playful: #ffd43b;
+  --accent-dramatic: #ff5a4e;
+  --accent-calm: #5eead4;
+  --accent-neutral: #c9c9cf;
+  --accent: var(--accent-neutral);
+
+  --radius-pill: 999px;
+  --radius-card: 18px;
+  --radius-panel: 28px;
+
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --h1-size: clamp(36px, 4.2vw, 60px);
+  --h1-tracking: -0.035em;
+  --body-size: 18px;
+  --label-size: 12px;
+  --label-tracking: 0.1em;
+
+  --btn-height: 52px;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --fade: 0.45s;
+}

@@ -1,0 +1,27 @@
+{
+  "name": "pip-personality-bot",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173",
+    "lint": "eslint src tests",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "gsap": "^3.15.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
+    "@types/three": "^0.186.0",
+    "eslint": "^10.13.0",
+    "geist": "^1.8.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vite": "^8.3.5"
+  },
+  "type": "module",
+  "private": true
+}

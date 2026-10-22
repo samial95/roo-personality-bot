@@ -39,7 +39,7 @@ test('capture all states', async ({ page }, info) => {
   await current(page).getByRole('radio', { name: 'Playful' }).click();
   await current(page).getByRole('button', { name: 'Customize Pip' }).click();
   await current(page).getByRole('radio', { name: 'Sky Blue' }).click();
-  await current(page).getByRole('radio', { name: 'Gold' }).click();
+  await current(page).getByRole('radio', { name: 'Gold', exact: true }).click();
   await snap('11-customize-color', 900);
   await current(page).getByRole('tab', { name: 'Moves' }).click();
   await current(page).getByRole('button', { name: /Dance/ }).click();

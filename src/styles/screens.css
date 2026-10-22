@@ -33,10 +33,15 @@
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--glow) 85%, transparent) 0, color-mix(in srgb, var(--glow) 35%, transparent) 22%, transparent 48%),
+    radial-gradient(
+      circle at 50% 46%,
+      color-mix(in srgb, var(--glow) 95%, transparent) 0,
+      color-mix(in srgb, var(--glow) 60%, transparent) 16%,
+      color-mix(in srgb, var(--glow) 22%, transparent) 32%,
+      transparent 50%
+    ),
     radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.03), transparent 70%);
-  filter: blur(8px);
-  opacity: 0.85;
+  filter: blur(10px);
 }
 
 .content {
@@ -77,6 +82,24 @@
   width: min(538px, 39vw);
 }
 
+h1 {
+  font-size: var(--h1-size);
+  font-weight: 600;
+  letter-spacing: var(--h1-tracking);
+  line-height: 1.04;
+  margin: 0 0 20px;
+}
+.body {
+  color: var(--text-secondary);
+  margin: 0 0 28px;
+}
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--label-size);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
 h1:focus,
 h2:focus {
   outline: none;
@@ -819,6 +842,22 @@ h2 {
   }
   [data-screen='boot'] .content {
     display: none;
+  }
+  [data-screen='reveal'] .stage {
+    inset: 0 0 60% 0;
+  }
+  [data-screen='reveal'] .content {
+    top: 40%;
+  }
+  .reveal-name {
+    font-size: 28px;
+    margin-bottom: 6px;
+  }
+  .actions {
+    flex-wrap: nowrap;
+  }
+  .actions .btn-text {
+    padding: 0 10px;
   }
   .screen {
     align-self: start;

@@ -16,11 +16,11 @@ import {
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
 // Proportions from the reference sheet (units ≈ 100 mm).
-export const BODY_W = 1.16;
+export const BODY_W = 1.08;
 export const BODY_H = 1.58;
 export const BODY_D = 0.96;
 const BODY_R = 0.3;
-const FACE_W = 0.84;
+const FACE_W = 0.8;
 const FACE_H = 0.66;
 const FACE_Y = 1.1;
 
@@ -142,7 +142,7 @@ export function buildProceduralRobot(faceTex: Texture): RobotParts {
   const makeAntenna = (side: -1 | 1) => {
     const g = new Group();
     g.name = side < 0 ? 'antenna_L' : 'antenna_R';
-    g.position.set(side * 0.33, BODY_H - 0.05, 0);
+    g.position.set(side * 0.31, BODY_H - 0.05, 0);
     g.rotation.z = -side * 0.3;
     const collar = new Mesh(roundedCylinder(0.085, 0.05, 0.02), mats.joint);
     const stem = new Mesh(roundedCylinder(0.06, 0.24, 0.01), mats.joint);

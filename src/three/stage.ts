@@ -158,7 +158,7 @@ export class Stage {
       }),
     );
     this.floorGlow.rotation.x = -Math.PI / 2;
-    this.floorGlow.position.y = -0.56;
+    this.floorGlow.position.y = -0.36;
     this.scene.add(shadow, this.floorGlow);
     for (const [r, o] of [
       [0.82, 0.14],
@@ -169,7 +169,7 @@ export class Stage {
         new MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: o, depthWrite: false }),
       );
       ring.rotation.x = -Math.PI / 2;
-      ring.position.y = -0.58;
+      ring.position.y = -0.38;
       ring.userData.base = o;
       this.rings.push(ring);
       this.scene.add(ring);
@@ -539,9 +539,23 @@ export class Stage {
     this.renderer.setAnimationLoop(null);
   }
 
+  private slowFrames = 0;
+
+  /** Drop to 1× pixel ratio if frames stay slow (weaker laptops). */
+  private adaptQuality(rawDt: number) {
+    if (this.renderer.getPixelRatio() <= 1) return;
+    this.slowFrames = rawDt > 0.024 ? this.slowFrames + 1 : Math.max(0, this.slowFrames - 1);
+    if (this.slowFrames > 90) {
+      this.renderer.setPixelRatio(1);
+      this.resize();
+    }
+  }
+
   private frame = () => {
     const now = performance.now();
-    const dt = Math.min(0.05, (now - this.last) / 1000);
+    const rawDt = (now - this.last) / 1000;
+    this.adaptQuality(rawDt);
+    const dt = Math.min(0.05, rawDt);
     this.last = now;
     this.clock += dt;
     const r = this.robot;
@@ -644,9 +658,11 @@ export class Stage {
     this.robot.empties.head_top.getWorldPosition(this.tmp);
     this.tmp.project(this.camera);
     const { width, height } = this.host.getBoundingClientRect();
-    const x = ((this.tmp.x + 1) / 2) * width;
-    const y = ((1 - this.tmp.y) / 2) * height;
-    this.bubbleEl.style.transform = `translate(${Math.round(x + 70)}px, ${Math.round(y - 70)}px)`;
+    // keep the bubble inside the stage (narrow phones)
+    const bw = this.bubbleEl.offsetWidth;
+    const x = Math.min(((this.tmp.x + 1) / 2) * width + 70, width - bw - 12);
+    const y = Math.max(((1 - this.tmp.y) / 2) * height - 70, 64);
+    this.bubbleEl.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
   }
 
   private activity() {
